@@ -1,0 +1,72 @@
+name: Build and test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and run integration tests
+    runs-on: windows-latest
+    env:
+      PACKAGE_PROJECT: PublishShim.MSBuild/PublishShim.MSBuild.csproj
+      TASK_PROJECT: PublishShim.MSBuild.Tasks/PublishShim.MSBuild.Tasks.csproj
+      TEST_PROJECT: tests/PublishShim.IntegrationTests/PublishShim.IntegrationTests.csproj
+      SAMPLE_PROJECT: samples/PublishShim.Sample/PublishShim.Sample.csproj
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore projects
+        shell: pwsh
+        run: |
+          foreach ($project in @($env:PACKAGE_PROJECT, $env:TASK_PROJECT, $env:TEST_PROJECT, $env:SAMPLE_PROJECT)) {
+            dotnet restore $project
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Build managed projects
+        shell: pwsh
+        run: |
+          foreach ($project in @($env:TASK_PROJECT, $env:TEST_PROJECT, $env:SAMPLE_PROJECT)) {
+            dotnet build $project --no-restore --configuration Release
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Pack package and native shims
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/packages | Out-Null
+          dotnet pack $env:PACKAGE_PROJECT --no-restore --configuration Release --output artifacts/packages
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run integration tests against the package
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -Raw $env:PACKAGE_PROJECT
+          $version = @($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          $packagePath = Join-Path $PWD "artifacts/packages/PublishShim.MSBuild.$version.nupkg"
+          if (-not (Test-Path $packagePath)) { throw "Package was not found: $packagePath" }
+
+          dotnet run --project $env:TEST_PROJECT --no-build --configuration Release -- $packagePath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload build package
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-package
+          if-no-files-found: warn
+          path: artifacts/packages/*.nupkg

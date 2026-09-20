@@ -1,0 +1,190 @@
+name: Manual NuGet release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version (must match PublishShim.MSBuild.csproj)
+        required: true
+        default: '0.1.0'
+        type: string
+      release_notes:
+        description: Markdown release notes
+        required: false
+        default: 'See the package validation evidence attached to this release.'
+        type: string
+      publish:
+        description: Push to NuGet and create the GitHub Release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Pack and optionally publish
+    runs-on: windows-latest
+    env:
+      PACKAGE_ID: PublishShim.MSBuild
+      PACKAGE_PROJECT: PublishShim.MSBuild/PublishShim.MSBuild.csproj
+      TEST_PROJECT: tests/PublishShim.IntegrationTests/PublishShim.IntegrationTests.csproj
+      NUGET_SOURCE: https://api.nuget.org/v3/index.json
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Validate requested version
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          SHOULD_PUBLISH: ${{ inputs.publish }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if ($env:REQUESTED_VERSION -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
+            throw "Invalid semantic package version: $env:REQUESTED_VERSION"
+          }
+
+          [xml]$project = Get-Content -Raw $env:PACKAGE_PROJECT
+          $projectVersion = @($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          if ($projectVersion -ne $env:REQUESTED_VERSION) {
+            throw "Requested version $env:REQUESTED_VERSION does not match project version $projectVersion"
+          }
+
+          if ($env:SHOULD_PUBLISH -eq 'true') {
+            $tag = "v$env:REQUESTED_VERSION"
+            $tagMatch = @(git ls-remote --refs origin "refs/tags/$tag" 2>$null)
+            if ($tagMatch.Count -gt 0) {
+              throw "Git tag $tag already exists; refusing to republish"
+            }
+          }
+
+          $env:RELEASE_NOTES | Set-Content -Encoding utf8 release-notes.md
+
+      - name: Restore package and integration test projects
+        shell: pwsh
+        run: |
+          dotnet restore $env:PACKAGE_PROJECT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet restore $env:TEST_PROJECT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Pack NuGet package
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force artifacts/packages | Out-Null
+          dotnet pack $env:PACKAGE_PROJECT --no-restore --configuration Release --output artifacts/packages /p:PackageVersion=$env:REQUESTED_VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate package contents
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $nupkg = Join-Path $PWD "artifacts/packages/$env:PACKAGE_ID.$env:REQUESTED_VERSION.nupkg"
+          if (-not (Test-Path $nupkg)) { throw "Missing $nupkg" }
+
+          $packageArchive = [System.IO.Compression.ZipFile]::OpenRead($nupkg)
+          try {
+            $names = @($packageArchive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+            $requiredEntries = @(
+              'README.md',
+              'build/PublishShim.MSBuild.targets',
+              'tasks/PublishShim.MSBuild.Tasks.dll',
+              'tools/win-x64/publishshim.exe',
+              'tools/win-x64/publishshim.winexe.exe'
+            )
+
+            foreach ($entry in $requiredEntries) {
+              if ($names -notcontains $entry) { throw "Package entry is missing: $entry" }
+            }
+
+            $nuspec = @($names | Where-Object { $_ -match '\.nuspec$' })
+            if ($nuspec.Count -ne 1) { throw 'Package must contain exactly one nuspec file' }
+          } finally {
+            $packageArchive.Dispose()
+          }
+
+          Get-ChildItem artifacts/packages | Select-Object Name, Length | Format-Table | Out-String | Tee-Object package-contents.log
+
+      - name: Run integration tests against the package
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $nupkg = Join-Path $PWD "artifacts/packages/$env:PACKAGE_ID.$env:REQUESTED_VERSION.nupkg"
+          dotnet build $env:TEST_PROJECT --no-restore --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project $env:TEST_PROJECT --no-build --configuration Release -- $nupkg
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload package and validation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-package-${{ inputs.version }}
+          if-no-files-found: warn
+          path: |
+            artifacts/packages/*.nupkg
+            package-contents.log
+            release-notes.md
+
+      - name: Validate Trusted Publishing user
+        if: ${{ inputs.publish == true }}
+        shell: pwsh
+        env:
+          NUGET_USER: ${{ secrets.NUGET_USER }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_USER)) {
+            throw 'NUGET_USER repository secret is required when publish=true'
+          }
+
+      - name: NuGet Trusted Publishing login
+        if: ${{ inputs.publish == true }}
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish package to NuGet
+        if: ${{ inputs.publish == true }}
+        shell: pwsh
+        env:
+          TEMP_NUGET_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TEMP_NUGET_KEY)) {
+            throw 'NuGet Trusted Publishing did not return a temporary credential'
+          }
+
+          dotnet nuget push "artifacts/packages/$env:PACKAGE_ID.$env:REQUESTED_VERSION.nupkg" --api-key $env:TEMP_NUGET_KEY --source $env:NUGET_SOURCE --skip-duplicate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Create GitHub Release
+        if: ${{ inputs.publish == true }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "v$env:REQUESTED_VERSION" `
+            "artifacts/packages/$env:PACKAGE_ID.$env:REQUESTED_VERSION.nupkg" `
+            --target $env:GITHUB_SHA `
+            --title "$env:PACKAGE_ID $env:REQUESTED_VERSION" `
+            --notes-file release-notes.md
+
+  # publish=false is the default and performs a complete package dry-run without
+  # pushing to NuGet or creating a GitHub Release.
