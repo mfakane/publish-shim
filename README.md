@@ -91,6 +91,18 @@ The directory where the actual application is relocated. The default is `.app`. 
 
 The name of the target EXE to replace with a shim. It is normally detected automatically and does not need to be specified.
 
+### `PublishShimIconPath`
+
+The optional path to the icon source for the generated shim. The source can be an `.ico` file or an executable/DLL containing an icon resource. If this property is omitted, PublishShim uses the target executable's icon. If the target has no icon resource, the native shim's default icon is retained.
+
+Use an absolute path, or construct a path from `$(MSBuildProjectDirectory)`:
+
+```xml
+<PropertyGroup>
+  <PublishShimIconPath>$(MSBuildProjectDirectory)\assets\myapp.ico</PublishShimIconPath>
+</PropertyGroup>
+```
+
 ## Shim behavior
 
 ### Console shim (`Exe`)
@@ -184,6 +196,7 @@ The following example moves `MyApp.exe` to `.app\MyApp.exe` and creates `MyApp-c
       ShimExecutableName="MyApp-cli.exe"
       TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
       PublishShimKind="Exe"
+      IconPath="$(PublishShimIconPath)"
       RuntimeIdentifier="$(RuntimeIdentifier)"
       NativeShimPath="$(PublishShimNativeShimPath)"
       NativeShimDirectory="$(PublishShimNativeShimDirectory)" />
@@ -192,6 +205,7 @@ The following example moves `MyApp.exe` to `.app\MyApp.exe` and creates `MyApp-c
       ShimExecutableName="MyApp-gui.exe"
       TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
       PublishShimKind="WinExe"
+      IconPath="$(PublishShimIconPath)"
       RuntimeIdentifier="$(RuntimeIdentifier)"
       NativeShimPath="$(PublishShimNativeShimPath)"
       NativeShimDirectory="$(PublishShimNativeShimDirectory)" />

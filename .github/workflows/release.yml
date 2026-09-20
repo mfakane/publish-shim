@@ -102,6 +102,7 @@ jobs:
             $names = @($packageArchive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
             $requiredEntries = @(
               'README.md',
+              'README.ja.md',
               'build/PublishShim.MSBuild.targets',
               'tasks/PublishShim.MSBuild.Tasks.dll',
               'tools/win-x64/publishshim.exe',

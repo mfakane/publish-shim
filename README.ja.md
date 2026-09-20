@@ -91,6 +91,18 @@ shim は `MyApp.exe` として起動され、埋め込まれた設定から `.ap
 
 shim に差し替えるターゲット EXE 名です。通常は自動判定されるため、明示指定は不要です。
 
+### `PublishShimIconPath`
+
+生成するshimのアイコンソースを指定する省略可能なプロパティです。`.ico`ファイル、またはアイコンリソースを含むEXE/DLLを指定できます。省略した場合はターゲットEXEのアイコンを使います。ターゲットにアイコンリソースがない場合は、native shimの既定アイコンを使います。
+
+絶対パスを指定するか、`$(MSBuildProjectDirectory)`からパスを組み立てます。
+
+```xml
+<PropertyGroup>
+  <PublishShimIconPath>$(MSBuildProjectDirectory)\assets\myapp.ico</PublishShimIconPath>
+</PropertyGroup>
+```
+
 ## shim の動作
 
 ### コンソール用 shim (`Exe`)
@@ -184,6 +196,7 @@ else
       ShimExecutableName="MyApp-cli.exe"
       TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
       PublishShimKind="Exe"
+      IconPath="$(PublishShimIconPath)"
       RuntimeIdentifier="$(RuntimeIdentifier)"
       NativeShimPath="$(PublishShimNativeShimPath)"
       NativeShimDirectory="$(PublishShimNativeShimDirectory)" />
@@ -192,6 +205,7 @@ else
       ShimExecutableName="MyApp-gui.exe"
       TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
       PublishShimKind="WinExe"
+      IconPath="$(PublishShimIconPath)"
       RuntimeIdentifier="$(RuntimeIdentifier)"
       NativeShimPath="$(PublishShimNativeShimPath)"
       NativeShimDirectory="$(PublishShimNativeShimDirectory)" />

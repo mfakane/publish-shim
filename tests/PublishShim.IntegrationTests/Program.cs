@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -92,6 +93,8 @@ internal static class Program
         {
             await RunScenarioAsync("disabled", publishShim: false, outputType: "Exe", kind: null, shimDirectory: null, verify: VerifyDisabledAsync);
             await RunScenarioAsync("auto-console", publishShim: true, outputType: "Exe", kind: "Auto", shimDirectory: null, verify: VerifyConsoleAsync);
+            await RunScenarioAsync("explicit-icon", publishShim: true, outputType: "Exe", kind: "Auto", shimDirectory: null, verify: VerifyConsoleWithIconAsync, useCustomIcon: true);
+            await RunScenarioAsync("default-icon", publishShim: false, outputType: "Exe", kind: null, shimDirectory: null, verify: VerifyDefaultIconAsync, repeatPublish: false, customTargets: CreateDefaultIconTargets());
             await RunScenarioAsync("native-aot", publishShim: true, outputType: "Exe", kind: "Auto", shimDirectory: null, verify: VerifyNativeAotAsync, publishAot: true, repeatPublish: false);
             await RunScenarioAsync("custom-exe", publishShim: true, outputType: "Exe", kind: "Exe", shimDirectory: "payload", verify: VerifyConsoleAsync);
             await RunScenarioAsync("winexe", publishShim: true, outputType: "WinExe", kind: "WinExe", shimDirectory: null, verify: VerifyWinExeAsync);
@@ -107,7 +110,8 @@ internal static class Program
             Func<string, string, string, Task> verify,
             bool publishAot = false,
             bool repeatPublish = true,
-            string? customTargets = null)
+            string? customTargets = null,
+            bool useCustomIcon = false)
         {
             var scenarioDirectory = Path.Combine(testRoot, name);
             Directory.CreateDirectory(scenarioDirectory);
@@ -115,8 +119,14 @@ internal static class Program
             var projectPath = Path.Combine(scenarioDirectory, $"{projectName}.csproj");
             var publishDirectory = Path.Combine(scenarioDirectory, "publish");
             var outputPath = Path.Combine(scenarioDirectory, "出力", "sample-output.txt");
+            string? shimIconPath = null;
+            if (useCustomIcon)
+            {
+                shimIconPath = Path.Combine(scenarioDirectory, "shim.ico");
+                await File.WriteAllBytesAsync(shimIconPath, CreateTestIcon(red: 220, green: 80, blue: 40));
+            }
 
-            await File.WriteAllTextAsync(projectPath, CreateProject(projectName, publishShim, outputType, kind, shimDirectory, publishAot, customTargets));
+            await File.WriteAllTextAsync(projectPath, CreateProject(projectName, publishShim, outputType, kind, shimDirectory, publishAot, shimIconPath, customTargets));
             await File.WriteAllTextAsync(Path.Combine(scenarioDirectory, "Program.cs"), CreateSampleProgram());
             await File.WriteAllTextAsync(Path.Combine(scenarioDirectory, "NuGet.Config"), CreateNuGetConfig(publishAot));
 
@@ -142,15 +152,20 @@ internal static class Program
 
         private Task VerifyNativeAotAsync(string publishDirectory, string projectName, string outputPath)
         {
-            return VerifyConsoleCoreAsync(publishDirectory, projectName, outputPath, verifyUnusualArgv0: false);
+            return VerifyConsoleCoreAsync(publishDirectory, projectName, outputPath, verifyUnusualArgv0: false, verifyIcon: false);
         }
 
         private Task VerifyConsoleAsync(string publishDirectory, string projectName, string outputPath)
         {
-            return VerifyConsoleCoreAsync(publishDirectory, projectName, outputPath, verifyUnusualArgv0: true);
+            return VerifyConsoleCoreAsync(publishDirectory, projectName, outputPath, verifyUnusualArgv0: true, verifyIcon: false);
         }
 
-        private async Task VerifyConsoleCoreAsync(string publishDirectory, string projectName, string outputPath, bool verifyUnusualArgv0)
+        private Task VerifyConsoleWithIconAsync(string publishDirectory, string projectName, string outputPath)
+        {
+            return VerifyConsoleCoreAsync(publishDirectory, projectName, outputPath, verifyUnusualArgv0: true, verifyIcon: true);
+        }
+
+        private async Task VerifyConsoleCoreAsync(string publishDirectory, string projectName, string outputPath, bool verifyUnusualArgv0, bool verifyIcon)
         {
             var executable = Path.Combine(publishDirectory, $"{projectName}.exe");
             var application = Path.Combine(publishDirectory, "payload", $"{projectName}.exe");
@@ -163,6 +178,10 @@ internal static class Program
             Assert(File.Exists(executable), $"The generated console shim is missing. Publish output: {publishedFiles}");
             Assert(File.Exists(actualApplication), "The relocated console application is missing.");
             Assert(!string.Equals(executable, actualApplication, StringComparison.OrdinalIgnoreCase), "The shim and application paths must differ.");
+            if (verifyIcon)
+            {
+                Assert(HasGroupIconResource(executable), "The generated console shim must contain the explicitly configured icon.");
+            }
 
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             var result = RunProcess(
@@ -211,7 +230,6 @@ internal static class Program
 
             Assert(File.Exists(executable), "The generated GUI shim is missing.");
             Assert(File.Exists(application), "The relocated GUI application is missing.");
-
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             var stopwatch = Stopwatch.StartNew();
             var result = RunProcess(
@@ -233,6 +251,17 @@ internal static class Program
             var output = await File.ReadAllTextAsync(outputPath);
             Assert(output.Contains($"PublishShimRoot={Path.GetFullPath(publishDirectory)}", StringComparison.OrdinalIgnoreCase), "The GUI shim must expose its publish root through PUBLISH_SHIM_ROOT.");
             Assert(output.Contains($"PublishShimExe={executable}", StringComparison.OrdinalIgnoreCase), "The GUI shim must expose its executable path through PUBLISH_SHIM_EXE.");
+        }
+
+        private static Task VerifyDefaultIconAsync(string publishDirectory, string projectName, string outputPath)
+        {
+            var shim = Path.Combine(publishDirectory, "default-icon-shim.exe");
+            var target = Path.Combine(publishDirectory, ".app", "default-icon-target.dll");
+            Assert(File.Exists(shim), "The default-icon shim is missing.");
+            Assert(File.Exists(target), "The default-icon target is missing.");
+            Assert(HasGroupIconResource(target), "The default-icon target must contain a group icon resource.");
+            Assert(HasGroupIconResource(shim), "The shim must inherit the target icon by default.");
+            return Task.CompletedTask;
         }
 
         private async Task VerifyMultipleEntryPointsAsync(string publishDirectory, string projectName, string outputPath)
@@ -286,11 +315,12 @@ internal static class Program
             Assert(guiOutput.Contains($"PublishShimExe={guiExecutable}", StringComparison.OrdinalIgnoreCase), "The GUI entry point must expose its own shim path.");
         }
 
-        private string CreateProject(string projectName, bool publishShim, string outputType, string? kind, string? shimDirectory, bool publishAot, string? customTargets = null)
+        private string CreateProject(string projectName, bool publishShim, string outputType, string? kind, string? shimDirectory, bool publishAot, string? shimIconPath, string? customTargets = null)
         {
             var kindProperty = kind is null ? string.Empty : $"\n    <PublishShimKind>{kind}</PublishShimKind>";
             var directoryProperty = shimDirectory is null ? string.Empty : $"\n    <PublishShimDirectory>{shimDirectory}</PublishShimDirectory>";
             var aotProperty = publishAot ? "\n    <PublishAot>true</PublishAot>" : string.Empty;
+            var shimIconProperty = shimIconPath is null ? string.Empty : $"\n    <PublishShimIconPath>{SecurityElement.Escape(shimIconPath)}</PublishShimIconPath>";
             var trimmedProperty = $"{publishAot.ToString().ToLowerInvariant()}";
             return $@"<Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>
@@ -300,7 +330,7 @@ internal static class Program
     <Nullable>enable</Nullable>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishTrimmed>{trimmedProperty}</PublishTrimmed>
-    <PublishShim>{publishShim.ToString().ToLowerInvariant()}</PublishShim>{kindProperty}{directoryProperty}{aotProperty}
+    <PublishShim>{publishShim.ToString().ToLowerInvariant()}</PublishShim>{kindProperty}{directoryProperty}{aotProperty}{shimIconProperty}
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include=""PublishShim.MSBuild"" Version=""{packageVersion}"" />
@@ -340,6 +370,35 @@ internal static class Program
     <GeneratePublishShimTask
         PublishDirectory="$(PublishDir)"
         ShimExecutableName="$(AssemblyName)-gui.exe"
+        TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
+        PublishShimKind="WinExe"
+        RuntimeIdentifier="$(RuntimeIdentifier)"
+        NativeShimPath="$(PublishShimNativeShimPath)"
+        NativeShimDirectory="$(PublishShimNativeShimDirectory)" />
+</Target>
+""";
+
+        private static string CreateDefaultIconTargets() => """
+  <Target Name="GenerateDefaultIconShim" AfterTargets="Publish">
+    <Copy
+        SourceFiles="$(SystemRoot)\System32\cmd.exe"
+        DestinationFiles="$(PublishDir)default-icon-target.dll" />
+    <ItemGroup>
+      <_PublishShimRelocationFiles
+          Include="$(PublishDir)**\*"
+          Exclude="$(PublishDir)$(PublishShimDirectory)\**" />
+    </ItemGroup>
+    <RelocatePublishArtifactsTask
+        PublishDirectory="$(PublishDir)"
+        Files="@(_PublishShimRelocationFiles)"
+        TargetExecutableName="default-icon-target.dll"
+        ShimDirectory=".app">
+      <Output TaskParameter="ActualApplicationRelativePath"
+              PropertyName="_PublishShimActualApplicationRelativePath" />
+    </RelocatePublishArtifactsTask>
+    <GeneratePublishShimTask
+        PublishDirectory="$(PublishDir)"
+        ShimExecutableName="default-icon-shim.exe"
         TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
         PublishShimKind="WinExe"
         RuntimeIdentifier="$(RuntimeIdentifier)"
@@ -388,6 +447,73 @@ internal static class Program
     }
 }
 """;
+
+        private static byte[] CreateTestIcon(byte red, byte green, byte blue)
+        {
+            const int width = 16;
+            const int height = 16;
+            const int xorStride = width * 4;
+            const int maskStride = 4;
+            var xorSize = xorStride * height;
+            var maskSize = maskStride * height;
+            var dibSize = 40 + xorSize + maskSize;
+            var icon = new byte[6 + 16 + dibSize];
+
+            BinaryPrimitives.WriteUInt16LittleEndian(icon.AsSpan(0, 2), 0);
+            BinaryPrimitives.WriteUInt16LittleEndian(icon.AsSpan(2, 2), 1);
+            BinaryPrimitives.WriteUInt16LittleEndian(icon.AsSpan(4, 2), 1);
+            icon[6] = width;
+            icon[7] = height;
+            BinaryPrimitives.WriteUInt16LittleEndian(icon.AsSpan(10, 2), 1);
+            BinaryPrimitives.WriteUInt16LittleEndian(icon.AsSpan(12, 2), 32);
+            BinaryPrimitives.WriteUInt32LittleEndian(icon.AsSpan(14, 4), (uint)dibSize);
+            BinaryPrimitives.WriteUInt32LittleEndian(icon.AsSpan(18, 4), 22);
+
+            var dibOffset = 22;
+            BinaryPrimitives.WriteUInt32LittleEndian(icon.AsSpan(dibOffset, 4), 40);
+            BinaryPrimitives.WriteInt32LittleEndian(icon.AsSpan(dibOffset + 4, 4), width);
+            BinaryPrimitives.WriteInt32LittleEndian(icon.AsSpan(dibOffset + 8, 4), height * 2);
+            BinaryPrimitives.WriteUInt16LittleEndian(icon.AsSpan(dibOffset + 12, 2), 1);
+            BinaryPrimitives.WriteUInt16LittleEndian(icon.AsSpan(dibOffset + 14, 2), 32);
+            BinaryPrimitives.WriteUInt32LittleEndian(icon.AsSpan(dibOffset + 20, 4), (uint)(xorSize + maskSize));
+
+            var pixelOffset = dibOffset + 40;
+            for (var index = 0; index < width * height; index++)
+            {
+                var offset = pixelOffset + index * 4;
+                icon[offset] = blue;
+                icon[offset + 1] = green;
+                icon[offset + 2] = red;
+                icon[offset + 3] = 255;
+            }
+
+            return icon;
+        }
+
+        private static bool HasGroupIconResource(string path)
+        {
+            var module = LoadLibraryEx(path, IntPtr.Zero, LoadLibraryAsDataFile);
+            if (module == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            try
+            {
+                var found = false;
+                EnumResourceNameCallback callback = (_, _, _, _) =>
+                {
+                    found = true;
+                    return false;
+                };
+                EnumResourceNames(module, new IntPtr(14), callback, IntPtr.Zero);
+                return found;
+            }
+            finally
+            {
+                FreeLibrary(module);
+            }
+        }
 
         private string CreateNuGetConfig(bool publishAot) => $@"<configuration>
   <packageSources>
@@ -534,6 +660,20 @@ internal static class Program
                 }
             }
         }
+
+        private const uint LoadLibraryAsDataFile = 0x00000002;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr LoadLibraryEx(string fileName, IntPtr file, uint flags);
+
+        private delegate bool EnumResourceNameCallback(IntPtr module, IntPtr type, IntPtr name, IntPtr parameter);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool EnumResourceNames(IntPtr module, IntPtr type, EnumResourceNameCallback callback, IntPtr parameter);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FreeLibrary(IntPtr module);
 
         private static async Task WaitForFileAsync(string path)
         {

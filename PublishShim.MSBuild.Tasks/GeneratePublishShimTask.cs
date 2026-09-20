@@ -48,6 +48,8 @@ public sealed class GeneratePublishShimTask : BuildTask
 
     public string PublishShimKind { get; set; } = "Auto";
 
+    public string? IconPath { get; set; }
+
     public string? NativeShimPath { get; set; }
 
     public string? NativeShimDirectory { get; set; }
@@ -70,6 +72,21 @@ public sealed class GeneratePublishShimTask : BuildTask
             var nativeShimPath = ResolveNativeShimPath(RuntimeIdentifier, NativeShimPath, NativeShimDirectory, PublishShimKind, targetPath);
 
             CopyShim(nativeShimPath, generatedShimPath);
+            if (PublishShimIconUtilities.TryApplyIcon(generatedShimPath, IconPath, targetPath))
+            {
+                var iconSource = string.IsNullOrWhiteSpace(IconPath) ? targetPath : Path.GetFullPath(IconPath);
+                Log.LogMessage(MessageImportance.Low, $"Applied shim icon from '{iconSource}'.");
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(IconPath))
+                {
+                    throw new InvalidOperationException($"No icon resource was found in the configured icon source: '{Path.GetFullPath(IconPath)}'.");
+                }
+
+                Log.LogMessage(MessageImportance.Low, $"No icon resource was found in '{targetPath}'; keeping the native shim icon.");
+            }
+
             AppendConfiguration(generatedShimPath, targetRelativePath);
 
             GeneratedShimPath = generatedShimPath;

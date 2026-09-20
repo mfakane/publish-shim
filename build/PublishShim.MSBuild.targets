@@ -44,10 +44,11 @@
 	</RelocatePublishArtifactsTask>
 
 	<GeneratePublishShimTask PublishDirectory="$(PublishDir)"
-							 ShimExecutableName="$(PublishShimTargetExecutableName)"
-							 TargetRelativePath="$(PublishShimActualApplicationRelativePath)"
-							 PublishShimKind="$(PublishShimKind)"
-							 RuntimeIdentifier="$(RuntimeIdentifier)"
+								 ShimExecutableName="$(PublishShimTargetExecutableName)"
+								 TargetRelativePath="$(PublishShimActualApplicationRelativePath)"
+								 PublishShimKind="$(PublishShimKind)"
+								 IconPath="$(PublishShimIconPath)"
+								 RuntimeIdentifier="$(RuntimeIdentifier)"
 							 NativeShimPath="$(PublishShimNativeShimPath)"
 							 NativeShimDirectory="$(PublishShimNativeShimDirectory)">
 	  <Output TaskParameter="GeneratedShimPath" PropertyName="PublishShimGeneratedShimPath" />
