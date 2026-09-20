@@ -160,9 +160,16 @@ else
 </PropertyGroup>
 
 <Target Name="GenerateMultiplePublishShims" AfterTargets="Publish">
+  <ItemGroup>
+    <_PublishShimRelocationFiles
+        Include="$(PublishDir)**\*"
+        Exclude="$(PublishDir)$(PublishShimDirectory)\**;$(PublishDir)MyApp-cli.exe;$(PublishDir)MyApp-gui.exe" />
+  </ItemGroup>
+
   <!-- publish成果物を一度だけ退避する -->
   <RelocatePublishArtifactsTask
       PublishDirectory="$(PublishDir)"
+      Files="@(_PublishShimRelocationFiles)"
       TargetExecutableName="$(PublishShimTargetExecutableName)"
       ShimDirectory=".app">
     <Output TaskParameter="ActualApplicationRelativePath"
@@ -187,6 +194,14 @@ else
       NativeShimPath="$(PublishShimNativeShimPath)"
       NativeShimDirectory="$(PublishShimNativeShimDirectory)" />
 </Target>
+```
+
+標準の `GeneratePublishShim` ターゲットは、`$(PublishDir)**\*` を移動対象にし、`$(PublishDir)$(PublishShimDirectory)\**` を除外します。標準ターゲットのまま追加のファイルを残す場合は、publishルートを含むglobを `PublishShimRelocationExclude` に指定します。
+
+```xml
+<PropertyGroup>
+  <PublishShimRelocationExclude>$(PublishDir)config.json;$(PublishDir)*-cli.exe;$(PublishDir)*-gui.exe</PublishShimRelocationExclude>
+</PropertyGroup>
 ```
 
 `GeneratePublishShimTask` の `ShimExecutableName` は生成するshimのファイル名、`TargetRelativePath` は実体アプリケーションへの相対パスです。両者を分けて指定するため、複数のshimが同じ実体を指せます。

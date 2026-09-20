@@ -246,6 +246,8 @@ internal static class Program
             Assert(File.Exists(cliExecutable), "The CLI entry point shim is missing.");
             Assert(File.Exists(guiExecutable), "The GUI entry point shim is missing.");
             Assert(File.Exists(application), "The shared application executable is missing.");
+            Assert(File.Exists(Path.Combine(publishDirectory, "keep-at-root.txt")), "The excluded publish file must remain in the publish root.");
+            Assert(!File.Exists(Path.Combine(publishDirectory, ".app", "keep-at-root.txt")), "The excluded publish file must not be moved into .app.");
             Assert(!File.Exists(Path.Combine(publishDirectory, $"{projectName}.exe")), "The custom entry point target must not leave the original executable in the publish root.");
 
             var cliResult = RunProcess(
@@ -310,8 +312,18 @@ internal static class Program
 
         private static string CreateMultipleEntryPointTargets() => """
   <Target Name="GenerateMultiplePublishShims" AfterTargets="Publish">
+    <WriteLinesToFile
+        File="$(PublishDir)keep-at-root.txt"
+        Lines="keep"
+        Overwrite="true" />
+    <ItemGroup>
+      <_PublishShimRelocationFiles
+          Include="$(PublishDir)**\*"
+          Exclude="$(PublishDir)$(PublishShimDirectory)\**;$(PublishDir)keep-at-root.txt" />
+    </ItemGroup>
     <RelocatePublishArtifactsTask
         PublishDirectory="$(PublishDir)"
+        Files="@(_PublishShimRelocationFiles)"
         TargetExecutableName="$(AssemblyName).exe"
         ShimDirectory=".app">
       <Output TaskParameter="ActualApplicationRelativePath"

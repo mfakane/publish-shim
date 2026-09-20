@@ -29,7 +29,14 @@
 	<Error Condition="'$(PublishShimTargetExecutableName)' == ''"
 		   Text="PublishShim could not determine the target executable name." />
 
+	<ItemGroup>
+	  <_PublishShimRelocationFiles
+		  Include="$(PublishDir)**\*"
+		  Exclude="$(PublishDir)$(PublishShimDirectory)\**;$(PublishShimRelocationExclude)" />
+	</ItemGroup>
+
 	<RelocatePublishArtifactsTask PublishDirectory="$(PublishDir)"
+								  Files="@(_PublishShimRelocationFiles)"
 								  TargetExecutableName="$(PublishShimTargetExecutableName)"
 								  ShimDirectory="$(PublishShimDirectory)">
 	  <Output TaskParameter="ActualApplicationPath" PropertyName="PublishShimActualApplicationPath" />
