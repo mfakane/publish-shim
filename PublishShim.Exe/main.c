@@ -342,6 +342,7 @@ static DWORD LaunchTarget(const wchar_t* targetPath)
 	wchar_t* commandLine = NULL;
 	DWORD result = ERROR_GEN_FAILURE;
 	BOOL inheritHandles = FALSE;
+	DWORD creationFlags = 0;
 
 	ZeroMemory(&startupInfo, sizeof(startupInfo));
 	startupInfo.cb = sizeof(startupInfo);
@@ -356,6 +357,8 @@ static DWORD LaunchTarget(const wchar_t* targetPath)
 	inheritHandles = IsValidInheritedHandle(startupInfo.hStdInput) ||
 		IsValidInheritedHandle(startupInfo.hStdOutput) ||
 		IsValidInheritedHandle(startupInfo.hStdError);
+#else
+	creationFlags = CREATE_NO_WINDOW;
 #endif
 
 	if (!BuildChildCommandLine(targetPath, &commandLine))
@@ -364,7 +367,7 @@ static DWORD LaunchTarget(const wchar_t* targetPath)
 		return ERROR_OUTOFMEMORY;
 	}
 
-	if (!CreateProcessW(targetPath, commandLine, NULL, NULL, inheritHandles, 0, NULL, NULL, &startupInfo, &processInformation))
+	if (!CreateProcessW(targetPath, commandLine, NULL, NULL, inheritHandles, creationFlags, NULL, NULL, &startupInfo, &processInformation))
 	{
 		DWORD error = GetLastError();
 		HeapFree(GetProcessHeap(), 0, commandLine);
