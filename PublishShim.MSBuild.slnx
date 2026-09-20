@@ -9,7 +9,9 @@
     <File Path="README.md" />
   </Folder>
   <Project Path="PublishShim.Exe/PublishShim.Exe.vcxproj" Id="4b70b39c-82e6-422f-aad9-c0d8b4bc7ba5" />
+  <Project Path="PublishShim.MSBuild/PublishShim.MSBuild.csproj" />
   <Project Path="PublishShim.MSBuild.Tasks/PublishShim.MSBuild.Tasks.csproj" />
   <Project Path="PublishShim.WinExe/PublishShim.WinExe.vcxproj" Id="8a35471c-fc8d-4ad5-a09a-12497917f6f0" />
   <Project Path="samples/PublishShim.Sample/PublishShim.Sample.csproj" />
+  <Project Path="tests/PublishShim.IntegrationTests/PublishShim.IntegrationTests.csproj" />
 </Solution>

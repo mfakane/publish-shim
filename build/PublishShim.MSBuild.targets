@@ -4,7 +4,8 @@
 	<PublishShimKind Condition="'$(PublishShimKind)' == ''">Auto</PublishShimKind>
 	<PublishShimDirectory Condition="'$(PublishShimDirectory)' == ''">.app</PublishShimDirectory>
 	<PublishShimTaskAssemblyPath Condition="'$(PublishShimTaskAssemblyPath)' == ''">$(MSBuildThisFileDirectory)..\tasks\PublishShim.MSBuild.Tasks.dll</PublishShimTaskAssemblyPath>
-	<PublishShimTargetExecutableName Condition="'$(PublishShimTargetExecutableName)' == '' and '$(TargetFileName)' != ''">$(TargetFileName)</PublishShimTargetExecutableName>
+	<PublishShimNativeShimDirectory Condition="'$(PublishShimNativeShimDirectory)' == ''">$(MSBuildThisFileDirectory)..\tools</PublishShimNativeShimDirectory>
+	<PublishShimNativeShimPath Condition="'$(PublishShimNativeShimPath)' == ''"></PublishShimNativeShimPath>
 	<PublishShimTargetExecutableName Condition="'$(PublishShimTargetExecutableName)' == '' and '$(TargetName)' != ''">$(TargetName).exe</PublishShimTargetExecutableName>
 	<PublishShimTargetExecutableName Condition="'$(PublishShimTargetExecutableName)' == '' and '$(AssemblyName)' != ''">$(AssemblyName).exe</PublishShimTargetExecutableName>
   </PropertyGroup>
@@ -17,6 +18,8 @@
 		  Condition="'$(PublishShim)' == 'true'">
 	<Error Condition="'$(RuntimeIdentifier)' == ''"
 		   Text="PublishShim requires RuntimeIdentifier to be set." />
+	<Error Condition="'$(RuntimeIdentifier)' != 'win-x64' and '$(PublishShimNativeShimPath)' == ''"
+		   Text="This PublishShim.MSBuild release includes native shims for win-x64 only. Set PublishShimNativeShimPath to provide a compatible custom shim." />
 	<Error Condition="'$(PublishDir)' == ''"
 		   Text="PublishShim requires PublishDir to be available." />
 	<Error Condition="'$(PublishShimTargetExecutableName)' == ''"
@@ -26,7 +29,9 @@
 						 TargetExecutableName="$(PublishShimTargetExecutableName)"
 						 PublishShimKind="$(PublishShimKind)"
 						 ShimDirectory="$(PublishShimDirectory)"
-						 RuntimeIdentifier="$(RuntimeIdentifier)">
+						 RuntimeIdentifier="$(RuntimeIdentifier)"
+						 NativeShimPath="$(PublishShimNativeShimPath)"
+						 NativeShimDirectory="$(PublishShimNativeShimDirectory)">
 	  <Output TaskParameter="GeneratedShimPath" PropertyName="PublishShimGeneratedShimPath" />
 	  <Output TaskParameter="ActualApplicationPath" PropertyName="PublishShimActualApplicationPath" />
 	</GeneratePublishShimTask>
