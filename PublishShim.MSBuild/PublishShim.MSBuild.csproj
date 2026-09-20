@@ -12,7 +12,7 @@
     <Description>Replace a published Windows executable with a small shim while relocating the application and its publish output.</Description>
     <PackageTags>msbuild;publish;shim;windows;dotnet</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>0BSD</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/mfakane/publish-shim</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://github.com/mfakane/publish-shim</PackageProjectUrl>
