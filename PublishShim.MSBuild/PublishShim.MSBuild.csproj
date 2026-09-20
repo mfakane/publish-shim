@@ -47,5 +47,8 @@
     <None Include="$(PublishShimRepositoryRoot)README.md"
           Pack="true"
           PackagePath="README.md" />
+    <None Include="$(PublishShimRepositoryRoot)README.ja.md"
+          Pack="true"
+          PackagePath="README.ja.md" />
   </ItemGroup>
 </Project>

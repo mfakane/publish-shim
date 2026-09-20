@@ -1,34 +1,36 @@
 # PublishShim
 
-Publish 後の実行ファイルを shim に差し替え、実体のアプリケーションを別ディレクトリへ退避するための MSBuild ターゲットとネイティブランチャーです。
+[日本語版](README.ja.md)
 
-最終的な publish 出力は次のようになります。
+PublishShim is an MSBuild target and native launcher that replaces a published executable with a shim and relocates the actual application to another directory.
 
-- `MyApp.exe` - shim
-- `.app/MyApp.exe` - 実体のアプリケーション
-- `.app/...` - その他の publish 成果物
+The resulting publish output looks like this:
 
-shim は `MyApp.exe` として起動され、埋め込まれた設定から `.app/MyApp.exe` を起動します。
+- `MyApp.exe` - the shim
+- `.app/MyApp.exe` - the actual application
+- `.app/...` - the rest of the publish output
 
-## できること
+The shim runs as `MyApp.exe` and starts `.app/MyApp.exe` using the configuration embedded in the shim.
 
-- publish 済みアプリをサブディレクトリへ移動する
-- 元のファイル名のまま shim を配置する
-- コンソールアプリ用 shim と GUI アプリ用 shim を切り替える
-- `PublishShimKind=Auto` の場合、ターゲット EXE の PE subsystem から自動判定する
+## Features
 
-## 前提
+- Relocate a published application into a subdirectory
+- Keep the original executable name for the shim
+- Choose between a console shim and a GUI shim
+- Automatically detect the target EXE's PE subsystem when `PublishShimKind=Auto`
 
-- Windows 向け publish で使う
-- `RuntimeIdentifier` を指定する
-- `build/PublishShim.MSBuild.targets` を import する
-- `tools/<RID>/publishshim.exe` と `tools/<RID>/publishshim.winexe.exe` が配置されている
+## Requirements
 
-## 使い方
+- Publish for Windows
+- Set a `RuntimeIdentifier`
+- Import `build/PublishShim.MSBuild.targets`
+- Provide `tools/<RID>/publishshim.exe` and `tools/<RID>/publishshim.winexe.exe`
 
-### NuGet パッケージ
+## Usage
 
-初回リリースは `win-x64` の native shim を含む `PublishShim.MSBuild` パッケージとして配布します。パッケージを参照すると MSBuild ターゲットは自動 import されます。
+### NuGet package
+
+The initial release is distributed as the `PublishShim.MSBuild` package with native shims for `win-x64`. Referencing the package automatically imports the MSBuild targets.
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -45,9 +47,9 @@ shim は `MyApp.exe` として起動され、埋め込まれた設定から `.ap
 </Project>
 ```
 
-その状態で `dotnet publish` を実行すると、publish 出力に shim と `.app` ディレクトリが生成されます。初回パッケージの対応 RID は `win-x64` のみです。
+Running `dotnet publish` with this configuration generates the shim and the `.app` directory in the publish output. The initial package supports only the `win-x64` RID.
 
-`csproj` に以下を追加します。
+The equivalent explicit properties are:
 
 ```xml
 <PropertyGroup>
@@ -60,62 +62,62 @@ shim は `MyApp.exe` として起動され、埋め込まれた設定から `.ap
 <Import Project="build\PublishShim.MSBuild.targets" />
 ```
 
-その状態で `dotnet publish` を実行すると、Publish 完了後に shim が生成されます。
+Running `dotnet publish` then generates the shim after publishing.
 
-## MSBuild プロパティ
+## MSBuild properties
 
 ### `PublishShim`
 
-`true` のとき shim 生成を有効にします。既定値は `false` です。
+Set this property to `true` to enable shim generation. The default is `false`.
 
 ### `PublishShimKind`
 
-生成する shim の種類を指定します。既定値は `Auto` です。
+Specifies the kind of shim to generate. The default is `Auto`.
 
 - `Auto`
-  - publish されたターゲット EXE の subsystem を読んで自動判定します
-  - `Windows CUI` の場合はコンソール用 shim を使います
-  - `Windows GUI` の場合は GUI 用 shim を使います
+  - Reads the subsystem of the published target EXE and detects the appropriate shim
+  - Uses the console shim for `Windows CUI`
+  - Uses the GUI shim for `Windows GUI`
 - `Exe`
-  - コンソール用 shim を強制します
+  - Forces the console shim
 - `WinExe`
-  - GUI 用 shim を強制します
+  - Forces the GUI shim
 
 ### `PublishShimDirectory`
 
-実体アプリケーションの退避先ディレクトリです。既定値は `.app` です。publish ルートからの相対パスで指定します。
+The directory where the actual application is relocated. The default is `.app`. The path is relative to the publish root.
 
 ### `PublishShimTargetExecutableName`
 
-shim に差し替えるターゲット EXE 名です。通常は自動判定されるため、明示指定は不要です。
+The name of the target EXE to replace with a shim. It is normally detected automatically and does not need to be specified.
 
-## shim の動作
+## Shim behavior
 
-### コンソール用 shim (`Exe`)
+### Console shim (`Exe`)
 
-- 標準入力・標準出力・標準エラー出力を子プロセスへ引き継ぐ
-- 子プロセスの終了を待つ
-- 子プロセスの終了コードをそのまま返す
+- Inherits standard input, standard output, and standard error from the child process
+- Waits for the child process to exit
+- Returns the child's exit code unchanged
 
-### GUI 用 shim (`WinExe`)
+### GUI shim (`WinExe`)
 
-- ターゲットアプリケーションを起動する
-- 起動成功後は shim 自身は即時終了する
+- Starts the target application
+- Exits immediately after the application starts successfully
 
 ### `PUBLISH_SHIM_ROOT`
 
-shim はターゲットアプリケーションを起動するとき、次の環境変数を設定します。
+When starting the target application, the shim sets these environment variables:
 
-- `PUBLISH_SHIM_ROOT` - shim が配置されている publish ルートの絶対パス
-- `PUBLISH_SHIM_EXE` - 起動元 shim 実行ファイルの絶対パス
+- `PUBLISH_SHIM_ROOT` - the absolute path to the publish root containing the shim
+- `PUBLISH_SHIM_EXE` - the absolute path to the shim that was invoked
 
-実体アプリケーションが `.app` へ移動された後も、publish ルートや shim 自身を参照できます。
+The actual application can use these values to locate the publish root and the shim even after it has been moved into `.app`.
 
 ## Advanced usage
 
-### shim の隣に置いたファイルを参照する
+### Referencing files next to the shim
 
-`.app` 内の実体アプリケーションから、ユーザーが shim の隣に配置したファイルを参照する場合は `PUBLISH_SHIM_ROOT` を使います。アプリケーション内部の publish 成果物は、通常どおり `AppContext.BaseDirectory` から解決します。
+Use `PUBLISH_SHIM_ROOT` when the actual application inside `.app` needs to access a file placed next to the shim. Files inside the application publish output should normally be resolved from `AppContext.BaseDirectory` as usual.
 
 ```csharp
 var appRoot = Environment.GetEnvironmentVariable("PUBLISH_SHIM_ROOT")
@@ -124,9 +126,9 @@ var appRoot = Environment.GetEnvironmentVariable("PUBLISH_SHIM_ROOT")
 var configPath = Path.Combine(appRoot, "config.json");
 ```
 
-### 複数のエントリポイントを作る
+### Creating multiple entry points
 
-同じ実体アプリケーションを複数の shim から起動し、呼び出された shim に応じて動作を切り替えられます。ターゲットアプリケーションは `PUBLISH_SHIM_EXE` から起動元を判定できます。
+Multiple shims can start the same actual application, which can then choose its behavior based on the shim that was invoked. The target application can identify the invoking shim through `PUBLISH_SHIM_EXE`.
 
 ```csharp
 var shimExe = Environment.GetEnvironmentVariable("PUBLISH_SHIM_EXE");
@@ -142,19 +144,19 @@ else
 }
 ```
 
-たとえば同じコンソール subsystem の実体に対して、`Exe` shim は標準入出力を引き継いで終了コードを返し、`WinExe` shim は `CREATE_NO_WINDOW` で起動してすぐ終了する、という構成にできます。これにより、実体アプリケーションを複製せずに CLI と GUI のエントリポイントを提供できます。
+For example, a console-subsystem application can expose a CLI entry point that inherits standard input and output and returns the child exit code through an `Exe` shim, while a `WinExe` shim starts the same application with `CREATE_NO_WINDOW` and exits immediately. This provides CLI and GUI entry points without duplicating the actual application.
 
-### 複数のshimを生成するMSBuild手順
+### MSBuild procedure for multiple shims
 
-標準の `GeneratePublishShim` ターゲットは、退避Taskを一度呼び出したあと、標準のエントリポイント用shimを生成します。複数のエントリポイントを作る場合は、カスタムターゲットから `RelocatePublishArtifactsTask` を一度呼び出し、`GeneratePublishShimTask` をエントリポイントごとに呼び出します。
+The standard `GeneratePublishShim` target calls the relocation task once and then generates the standard entry-point shim. To create multiple entry points, call `RelocatePublishArtifactsTask` once from a custom target and call `GeneratePublishShimTask` once for each entry point.
 
-`RelocatePublishArtifactsTask` はpublish成果物を `ShimDirectory` へ移動し、実体アプリケーションへの相対パスを出力します。`GeneratePublishShimTask` はその相対パスを受け取り、指定した名前と種類のshimをpublishルートへ生成します。`PublishShim.MSBuild.targets` をimport済みであることが前提です。
+`RelocatePublishArtifactsTask` moves the publish artifacts into `ShimDirectory` and outputs the relative path to the actual application. `GeneratePublishShimTask` receives that relative path and creates a shim with the specified name and kind in the publish root. This example assumes that `PublishShim.MSBuild.targets` has already been imported.
 
-次の例では、`MyApp.exe` を `.app\MyApp.exe` へ退避し、同じ実体を起動する `MyApp-cli.exe` と `MyApp-gui.exe` を生成します。
+The following example moves `MyApp.exe` to `.app\MyApp.exe` and creates `MyApp-cli.exe` and `MyApp-gui.exe`, both of which start the same actual application.
 
 ```xml
 <PropertyGroup>
-  <!-- 標準ターゲットの代わりに下のカスタムターゲットを使う -->
+  <!-- Use the custom target below instead of the standard target. -->
   <PublishShim>false</PublishShim>
   <PublishShimTargetExecutableName>MyApp.exe</PublishShimTargetExecutableName>
 </PropertyGroup>
@@ -166,7 +168,7 @@ else
         Exclude="$(PublishDir)$(PublishShimDirectory)\**;$(PublishDir)MyApp-cli.exe;$(PublishDir)MyApp-gui.exe" />
   </ItemGroup>
 
-  <!-- publish成果物を一度だけ退避する -->
+  <!-- Relocate the publish artifacts once. -->
   <RelocatePublishArtifactsTask
       PublishDirectory="$(PublishDir)"
       Files="@(_PublishShimRelocationFiles)"
@@ -176,7 +178,7 @@ else
             PropertyName="_PublishShimActualApplicationRelativePath" />
   </RelocatePublishArtifactsTask>
 
-  <!-- 退避した同じ実体を指すshimをエントリポイントごとに生成する -->
+  <!-- Generate shims for the same relocated application. -->
   <GeneratePublishShimTask
       PublishDirectory="$(PublishDir)"
       ShimExecutableName="MyApp-cli.exe"
@@ -196,7 +198,7 @@ else
 </Target>
 ```
 
-標準の `GeneratePublishShim` ターゲットは、`$(PublishDir)**\*` を移動対象にし、`$(PublishDir)$(PublishShimDirectory)\**` を除外します。標準ターゲットのまま追加のファイルを残す場合は、publishルートを含むglobを `PublishShimRelocationExclude` に指定します。
+The standard `GeneratePublishShim` target includes `$(PublishDir)**\*` as relocation candidates and excludes `$(PublishDir)$(PublishShimDirectory)\**`. To leave additional files in the publish root while using the standard target, specify publish-root globs in `PublishShimRelocationExclude`.
 
 ```xml
 <PropertyGroup>
@@ -204,61 +206,67 @@ else
 </PropertyGroup>
 ```
 
-`GeneratePublishShimTask` の `ShimExecutableName` は生成するshimのファイル名、`TargetRelativePath` は実体アプリケーションへの相対パスです。両者を分けて指定するため、複数のshimが同じ実体を指せます。
+`GeneratePublishShimTask` uses `ShimExecutableName` for the generated shim file name and `TargetRelativePath` for the relative path to the actual application. Keeping these values separate allows multiple shims to point to the same application.
 
-## サンプル
+## Sample
 
-`samples/PublishShim.Sample` は最小構成のサンプルです。
+`samples/PublishShim.Sample` is a minimal example.
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-	<OutputType>Exe</OutputType>
-	<TargetFramework>net8.0</TargetFramework>
-	<RuntimeIdentifier>win-x64</RuntimeIdentifier>
-	<PublishShim>true</PublishShim>
-	<PublishShimDirectory>.app</PublishShimDirectory>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishShim>true</PublishShim>
+    <PublishShimDirectory>.app</PublishShimDirectory>
   </PropertyGroup>
 
   <Import Project="..\..\build\PublishShim.MSBuild.targets" />
 </Project>
 ```
 
-## 開発者向け
+## Development
 
-開発用の配置は次のスクリプトで作成できます。
+Create the development layout with:
 
 ```powershell
 pwsh ./scripts/Prepare-DevLayout.ps1 -Configuration Debug
 ```
 
-このスクリプトは以下を行います。
+This script:
 
-- `PublishShim.MSBuild.Tasks` をビルドする
-- コンソール用 native shim をビルドする
-- GUI 用 native shim をビルドする
-- `tasks/` と `tools/win-x64/` に必要ファイルをコピーする
+- Builds `PublishShim.MSBuild.Tasks`
+- Builds the console native shim
+- Builds the GUI native shim
+- Copies the required files into `tasks/` and `tools/win-x64/`
 
-NuGet パッケージと統合テストは次のコマンドで実行できます。
+Run the NuGet packaging and integration tests with:
 
 ```powershell
 pwsh ./scripts/Test-Integration.ps1
 ```
 
-この統合テストには Native AOT publish も含まれます。Windows App SDK / WinUI 3 の依存ファイルとリソース配置を確認する smoke test は、Windows App SDK の開発環境と runtime 条件が必要なため、次で個別に実行します。
+The integration tests include a Native AOT publish. The Windows App SDK / WinUI 3 smoke test requires a Windows App SDK development environment and the appropriate runtime, so run it separately:
 
 ```powershell
 pwsh ./scripts/Test-WinUI3-Integration.ps1
 ```
 
-`samples/PublishShim.WinUI3.Sample` は unpackaged・self-contained の WinUI 3 サンプルです。smoke test は shim 経由で Windows App SDK を初期化し、`.app` 内の WinUI 依存ファイルを使ってウィンドウを生成できることを確認します。
+`samples/PublishShim.WinUI3.Sample` is an unpackaged, self-contained WinUI 3 sample. The smoke test initializes Windows App SDK through the shim and verifies that the WinUI dependencies inside `.app` can create a window.
 
-`dotnet pack PublishShim.MSBuild/PublishShim.MSBuild.csproj -c Release` でもパッケージを生成できます。パッケージには `build/PublishShim.MSBuild.targets`、task DLL、`tools/win-x64/` の native shim が含まれます。
+You can also create the package with:
 
-Authenticode 署名を行う場合は、shim の設定フッターを付加した後に生成済み shim を署名してください。署名後にフッターを追加すると署名が無効になります。
+```powershell
+dotnet pack PublishShim.MSBuild/PublishShim.MSBuild.csproj -c Release
+```
 
-## 制限
+The package contains `build/PublishShim.MSBuild.targets`, the task DLL, the native shims under `tools/win-x64/`, and the Japanese documentation as `README.ja.md`.
 
-- Windows PE 実行ファイルを前提に subsystem を判定します
-- `PublishShimKind=Auto` はターゲット EXE を読めることが前提です
-- subsystem が `Windows CUI` / `Windows GUI` 以外の場合はエラーになります
+If you use Authenticode signing, append the shim configuration footer before signing the generated shim. Appending the footer after signing invalidates the signature.
+
+## Limitations
+
+- Requires Windows PE executables to detect the subsystem
+- `PublishShimKind=Auto` requires the target EXE to be readable
+- Fails when the subsystem is neither `Windows CUI` nor `Windows GUI`
