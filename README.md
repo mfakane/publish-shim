@@ -102,6 +102,48 @@ shim に差し替えるターゲット EXE 名です。通常は自動判定さ�
 - ターゲットアプリケーションを起動する
 - 起動成功後は shim 自身は即時終了する
 
+### `PUBLISH_SHIM_ROOT`
+
+shim はターゲットアプリケーションを起動するとき、次の環境変数を設定します。
+
+- `PUBLISH_SHIM_ROOT` - shim が配置されている publish ルートの絶対パス
+- `PUBLISH_SHIM_EXE` - 起動元 shim 実行ファイルの絶対パス
+
+実体アプリケーションが `.app` へ移動された後も、publish ルートや shim 自身を参照できます。
+
+## Advanced usage
+
+### shim の隣に置いたファイルを参照する
+
+`.app` 内の実体アプリケーションから、ユーザーが shim の隣に配置したファイルを参照する場合は `PUBLISH_SHIM_ROOT` を使います。アプリケーション内部の publish 成果物は、通常どおり `AppContext.BaseDirectory` から解決します。
+
+```csharp
+var appRoot = Environment.GetEnvironmentVariable("PUBLISH_SHIM_ROOT")
+    ?? AppContext.BaseDirectory;
+
+var configPath = Path.Combine(appRoot, "config.json");
+```
+
+### 複数のエントリポイントを作る
+
+同じ実体アプリケーションを複数の shim から起動し、呼び出された shim に応じて動作を切り替えられます。ターゲットアプリケーションは `PUBLISH_SHIM_EXE` から起動元を判定できます。
+
+```csharp
+var shimExe = Environment.GetEnvironmentVariable("PUBLISH_SHIM_EXE");
+var invokedAs = Path.GetFileNameWithoutExtension(shimExe);
+
+if (string.Equals(invokedAs, "MyApp-cli", StringComparison.OrdinalIgnoreCase))
+{
+    RunCli();
+}
+else
+{
+    RunGui();
+}
+```
+
+たとえば同じコンソール subsystem の実体に対して、`Exe` shim は標準入出力を引き継いで終了コードを返し、`WinExe` shim は `CREATE_NO_WINDOW` で起動してすぐ終了する、という構成にできます。これにより、実体アプリケーションを複製せずに CLI と GUI のエントリポイントを提供できます。
+
 ## サンプル
 
 `samples/PublishShim.Sample` は最小構成のサンプルです。

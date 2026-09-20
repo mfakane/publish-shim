@@ -21,7 +21,7 @@ internal static class Program
         var packagePath = Path.GetFullPath(args[0]);
         var packageDirectory = Path.GetDirectoryName(packagePath)
             ?? throw new InvalidOperationException("The package directory could not be resolved.");
-        var testRoot = Path.Combine(Path.GetTempPath(), "PublishShim.IntegrationTests", Guid.NewGuid().ToString("N"));
+        var testRoot = Path.Combine(Path.GetTempPath(), "PublishShim.IntegrationTests", "path with spaces-日本語", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(testRoot);
 
         try
@@ -167,7 +167,12 @@ internal static class Program
                 executable,
                 publishDirectory,
                 new[] { "--exit", "37", "argument with spaces", string.Empty, "ユニコード", "--stdio" },
-                new Dictionary<string, string?> { ["PUBLISH_SHIM_SAMPLE_OUTPUT"] = outputPath },
+                new Dictionary<string, string?>
+                {
+                    ["PUBLISH_SHIM_SAMPLE_OUTPUT"] = outputPath,
+                    ["PUBLISH_SHIM_ROOT"] = "stale-root-value",
+                    ["PUBLISH_SHIM_EXE"] = "stale-exe-value"
+                },
                 redirectOutput: true);
 
             Assert(result.ExitCode == 37, $"The console shim must propagate the child exit code. Actual: {result.ExitCode}.");
@@ -175,6 +180,8 @@ internal static class Program
             Assert(result.StdErr.Contains("stderr-marker", StringComparison.Ordinal), "Console stderr was not inherited by the child.");
 
             var output = await File.ReadAllTextAsync(outputPath);
+            Assert(output.Contains($"PublishShimRoot={Path.GetFullPath(publishDirectory)}", StringComparison.OrdinalIgnoreCase), "The console shim must expose its publish root through PUBLISH_SHIM_ROOT.");
+            Assert(output.Contains($"PublishShimExe={executable}", StringComparison.OrdinalIgnoreCase), "The console shim must expose its executable path through PUBLISH_SHIM_EXE.");
             Assert(output.Contains("Arg[2]=argument with spaces", StringComparison.Ordinal), "The console shim lost a quoted argument.");
             Assert(output.Contains("Arg[3]=\n", StringComparison.Ordinal) || output.Contains("Arg[3]=\r\n", StringComparison.Ordinal), "The console shim lost an empty argument.");
             Assert(output.Contains("Arg[4]=ユニコード", StringComparison.Ordinal), "The console shim lost a Unicode argument.");
@@ -185,7 +192,12 @@ internal static class Program
                     executable,
                     publishDirectory,
                     "\"shim\\\"with-a-quote\" --exit 41",
-                    new Dictionary<string, string?> { ["PUBLISH_SHIM_SAMPLE_OUTPUT"] = outputPath });
+                    new Dictionary<string, string?>
+                    {
+                        ["PUBLISH_SHIM_SAMPLE_OUTPUT"] = outputPath,
+                        ["PUBLISH_SHIM_ROOT"] = "stale-root-value",
+                        ["PUBLISH_SHIM_EXE"] = "stale-exe-value"
+                    });
                 Assert(unusualArgv0Result == 41, $"The console shim must preserve the argument tail with unusual argv[0] quoting. Actual: {unusualArgv0Result}.");
             }
         }
@@ -204,13 +216,21 @@ internal static class Program
                 executable,
                 publishDirectory,
                 Array.Empty<string>(),
-                new Dictionary<string, string?> { ["PUBLISH_SHIM_SAMPLE_OUTPUT"] = outputPath },
+                new Dictionary<string, string?>
+                {
+                    ["PUBLISH_SHIM_SAMPLE_OUTPUT"] = outputPath,
+                    ["PUBLISH_SHIM_ROOT"] = "stale-root-value",
+                    ["PUBLISH_SHIM_EXE"] = "stale-exe-value"
+                },
                 redirectOutput: false);
             stopwatch.Stop();
 
             Assert(result.ExitCode == 0, $"The GUI shim must exit successfully after spawning the child. Actual: {result.ExitCode}.");
             Assert(stopwatch.Elapsed < TimeSpan.FromSeconds(5), "The GUI shim must not wait for the child process.");
             await WaitForFileAsync(outputPath);
+            var output = await File.ReadAllTextAsync(outputPath);
+            Assert(output.Contains($"PublishShimRoot={Path.GetFullPath(publishDirectory)}", StringComparison.OrdinalIgnoreCase), "The GUI shim must expose its publish root through PUBLISH_SHIM_ROOT.");
+            Assert(output.Contains($"PublishShimExe={executable}", StringComparison.OrdinalIgnoreCase), "The GUI shim must expose its executable path through PUBLISH_SHIM_EXE.");
         }
 
         private string CreateProject(string projectName, bool publishShim, string outputType, string? kind, string? shimDirectory, bool publishAot)
@@ -253,7 +273,12 @@ internal static class Program
         if (!string.IsNullOrWhiteSpace(outputPath))
         {
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-            var lines = new List<string> { $"ArgumentCount={args.Length}" };
+            var lines = new List<string>
+            {
+                $"ArgumentCount={args.Length}",
+                $"PublishShimRoot={Environment.GetEnvironmentVariable("PUBLISH_SHIM_ROOT")}",
+                $"PublishShimExe={Environment.GetEnvironmentVariable("PUBLISH_SHIM_EXE")}"
+            };
             for (var index = 0; index < args.Length; index++)
             {
                 lines.Add($"Arg[{index}]={args[index]}");

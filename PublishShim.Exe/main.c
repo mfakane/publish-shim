@@ -359,7 +359,7 @@ static BOOL IsValidInheritedHandle(HANDLE handle)
 	return handle != NULL && handle != INVALID_HANDLE_VALUE;
 }
 
-static DWORD LaunchTarget(const wchar_t* targetPath)
+static DWORD LaunchTarget(const wchar_t* targetPath, const wchar_t* shimPath, const wchar_t* executableDirectory)
 {
 	STARTUPINFOW startupInfo;
 	PROCESS_INFORMATION processInformation;
@@ -389,6 +389,22 @@ static DWORD LaunchTarget(const wchar_t* targetPath)
 	{
 		ShowErrorMessage(L"PublishShim", L"Failed to build the child command line.");
 		return ERROR_OUTOFMEMORY;
+	}
+
+	if (!SetEnvironmentVariableW(L"PUBLISH_SHIM_ROOT", executableDirectory))
+	{
+		DWORD error = GetLastError();
+		ShowErrorMessage(L"PublishShim", L"Failed to expose the publish root to the target executable.");
+		HeapFree(GetProcessHeap(), 0, commandLine);
+		return error;
+	}
+
+	if (!SetEnvironmentVariableW(L"PUBLISH_SHIM_EXE", shimPath))
+	{
+		DWORD error = GetLastError();
+		ShowErrorMessage(L"PublishShim", L"Failed to expose the shim executable to the target executable.");
+		HeapFree(GetProcessHeap(), 0, commandLine);
+		return error;
 	}
 
 	if (!CreateProcessW(targetPath, commandLine, NULL, NULL, inheritHandles, creationFlags, NULL, NULL, &startupInfo, &processInformation))
@@ -456,7 +472,7 @@ static int RunShim(void)
 		goto Cleanup;
 	}
 
-	result = LaunchTarget(targetPath);
+	result = LaunchTarget(targetPath, selfPath, executableDirectory);
 
 Cleanup:
 	if (targetPath != NULL)
