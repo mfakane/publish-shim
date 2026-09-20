@@ -26,6 +26,27 @@ shim は `MyApp.exe` として起動され、埋め込まれた設定から `.ap
 
 ## 使い方
 
+### NuGet パッケージ
+
+初回リリースは `win-x64` の native shim を含む `PublishShim.MSBuild` パッケージとして配布します。パッケージを参照すると MSBuild ターゲットは自動 import されます。
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishShim>true</PublishShim>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PublishShim.MSBuild" Version="0.1.0" />
+  </ItemGroup>
+</Project>
+```
+
+その状態で `dotnet publish` を実行すると、publish 出力に shim と `.app` ディレクトリが生成されます。初回パッケージの対応 RID は `win-x64` のみです。
+
 `csproj` に以下を追加します。
 
 ```xml
@@ -113,6 +134,24 @@ pwsh ./scripts/Prepare-DevLayout.ps1 -Configuration Debug
 - コンソール用 native shim をビルドする
 - GUI 用 native shim をビルドする
 - `tasks/` と `tools/win-x64/` に必要ファイルをコピーする
+
+NuGet パッケージと統合テストは次のコマンドで実行できます。
+
+```powershell
+pwsh ./scripts/Test-Integration.ps1
+```
+
+この統合テストには Native AOT publish も含まれます。Windows App SDK / WinUI 3 の依存ファイルとリソース配置を確認する smoke test は、Windows App SDK の開発環境と runtime 条件が必要なため、次で個別に実行します。
+
+```powershell
+pwsh ./scripts/Test-WinUI3-Integration.ps1
+```
+
+`samples/PublishShim.WinUI3.Sample` は unpackaged・self-contained の WinUI 3 サンプルです。smoke test は shim 経由で Windows App SDK を初期化し、`.app` 内の WinUI 依存ファイルを使ってウィンドウを生成できることを確認します。
+
+`dotnet pack PublishShim.MSBuild/PublishShim.MSBuild.csproj -c Release` でもパッケージを生成できます。パッケージには `build/PublishShim.MSBuild.targets`、task DLL、`tools/win-x64/` の native shim が含まれます。
+
+Authenticode 署名を行う場合は、shim の設定フッターを付加した後に生成済み shim を署名してください。署名後にフッターを追加すると署名が無効になります。
 
 ## 制限
 

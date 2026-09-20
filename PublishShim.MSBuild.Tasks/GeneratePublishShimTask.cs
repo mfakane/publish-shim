@@ -49,6 +49,8 @@ public sealed class GeneratePublishShimTask : BuildTask
 
     public string? NativeShimPath { get; set; }
 
+    public string? NativeShimDirectory { get; set; }
+
     [Output]
     public string GeneratedShimPath { get; private set; } = string.Empty;
 
@@ -69,7 +71,7 @@ public sealed class GeneratePublishShimTask : BuildTask
 
             ValidateInputs(publishDirectory, targetExecutableName, normalizedShimDirectory, publishedExecutablePath);
 
-            var nativeShimPath = ResolveNativeShimPath(RuntimeIdentifier, NativeShimPath, PublishShimKind, publishedExecutablePath);
+            var nativeShimPath = ResolveNativeShimPath(RuntimeIdentifier, NativeShimPath, NativeShimDirectory, PublishShimKind, publishedExecutablePath);
 
             PrepareDestinationDirectory(actualApplicationPath);
             MovePublishArtifacts(publishDirectory, normalizedShimDirectory);
@@ -154,7 +156,7 @@ public sealed class GeneratePublishShimTask : BuildTask
         return relative;
     }
 
-    private string ResolveNativeShimPath(string runtimeIdentifier, string? nativeShimPath, string publishShimKind, string publishedExecutablePath)
+    private string ResolveNativeShimPath(string runtimeIdentifier, string? nativeShimPath, string? nativeShimDirectory, string publishShimKind, string publishedExecutablePath)
     {
         if (!string.IsNullOrWhiteSpace(nativeShimPath))
         {
@@ -176,7 +178,9 @@ public sealed class GeneratePublishShimTask : BuildTask
         var resolvedKind = requestedKind == PublishShimKindValue.Auto
             ? DetectPublishShimKind(publishedExecutablePath)
             : requestedKind;
-        var toolsRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "tools"));
+        var toolsRoot = string.IsNullOrWhiteSpace(nativeShimDirectory)
+            ? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "tools"))
+            : Path.GetFullPath(nativeShimDirectory);
         var shimFileName = resolvedKind == PublishShimKindValue.WinExe ? GuiShimFileName : ConsoleShimFileName;
         var resolvedPath = Path.Combine(toolsRoot, runtimeIdentifier, shimFileName);
 
@@ -196,11 +200,11 @@ public sealed class GeneratePublishShimTask : BuildTask
             return PublishShimKindValue.Auto;
         }
 
-        return publishShimKind.Trim() switch
+        return publishShimKind.Trim().ToUpperInvariant() switch
         {
-            "Auto" => PublishShimKindValue.Auto,
-            "Exe" => PublishShimKindValue.Exe,
-            "WinExe" => PublishShimKindValue.WinExe,
+            "AUTO" => PublishShimKindValue.Auto,
+            "EXE" => PublishShimKindValue.Exe,
+            "WINEXE" => PublishShimKindValue.WinExe,
             _ => throw new InvalidOperationException($"PublishShimKind must be one of Auto, Exe, or WinExe. Actual value: '{publishShimKind}'."),
         };
     }

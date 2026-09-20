@@ -142,7 +142,9 @@ static BOOL LoadTargetRelativePath(const wchar_t* selfPath, wchar_t** targetRela
 		goto Cleanup;
 	}
 
-	if (pathCharCount == 0 || trailer.ConfigLength != sizeof(DWORD) + pathCharCount * sizeof(wchar_t))
+	if (pathCharCount == 0 ||
+		pathCharCount > (trailer.ConfigLength - sizeof(DWORD)) / sizeof(wchar_t) ||
+		trailer.ConfigLength != sizeof(DWORD) + pathCharCount * sizeof(wchar_t))
 	{
 		ShowErrorMessage(L"PublishShim", L"The target path payload is invalid.");
 		goto Cleanup;
@@ -257,7 +259,7 @@ static BOOL GetModulePath(wchar_t** selfPath)
 			return FALSE;
 		}
 
-		if (result < capacity - 1)
+		if (result < capacity)
 		{
 			*selfPath = buffer;
 			return TRUE;
@@ -276,32 +278,54 @@ static BOOL GetModulePath(wchar_t** selfPath)
 static const wchar_t* SkipProgramName(const wchar_t* commandLine)
 {
 	const wchar_t* current = commandLine;
+	BOOL inQuotes = FALSE;
 
 	while (*current == L' ' || *current == L'\t')
 	{
 		++current;
 	}
 
-	if (*current == L'"')
+	while (*current != L'\0')
 	{
-		++current;
-		while (*current != L'\0')
+		if (*current == L' ' || *current == L'\t')
 		{
-			if (*current == L'"')
+			if (!inQuotes)
 			{
-				++current;
 				break;
 			}
 
 			++current;
+			continue;
 		}
-	}
-	else
-	{
-		while (*current != L'\0' && *current != L' ' && *current != L'\t')
+
+		if (*current == L'\\')
 		{
-			++current;
+			const wchar_t* slashStart = current;
+			while (*current == L'\\')
+			{
+				++current;
+			}
+
+			if (*current != L'"')
+			{
+				continue;
+			}
+
+			if (((SIZE_T)(current - slashStart) & 1u) != 0)
+			{
+				++current;
+				continue;
+			}
 		}
+
+		if (*current == L'"')
+		{
+			inQuotes = !inQuotes;
+			++current;
+			continue;
+		}
+
+		++current;
 	}
 
 	return current;

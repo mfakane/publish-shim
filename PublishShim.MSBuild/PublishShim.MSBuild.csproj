@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <PackageId>PublishShim.MSBuild</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>mfakane</Authors>
+    <Company>mfakane</Company>
+    <Title>PublishShim MSBuild</Title>
+    <Description>Replace a published Windows executable with a small shim while relocating the application and its publish output.</Description>
+    <PackageTags>msbuild;publish;shim;windows;dotnet</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>0BSD</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/mfakane/publish-shim</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/mfakane/publish-shim</PackageProjectUrl>
+    <NoWarn>$(NoWarn);NU5100</NoWarn>
+    <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\packages\</PackageOutputPath>
+    <PublishShimRepositoryRoot>$(MSBuildThisFileDirectory)..\</PublishShimRepositoryRoot>
+  </PropertyGroup>
+
+  <Target Name="PreparePublishShimPackageAssets" BeforeTargets="Build;GenerateNuspec">
+    <Exec Command="pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File &quot;$(PublishShimRepositoryRoot)scripts\Prepare-DevLayout.ps1&quot; -Configuration $(Configuration)" />
+
+    <Error Condition="!Exists('$(PublishShimRepositoryRoot)tasks\PublishShim.MSBuild.Tasks.dll')"
+           Text="The MSBuild task assembly was not generated. Run scripts\Prepare-DevLayout.ps1 before packing." />
+    <Error Condition="!Exists('$(PublishShimRepositoryRoot)tools\win-x64\publishshim.exe')"
+           Text="The win-x64 console shim was not generated. Run scripts\Prepare-DevLayout.ps1 before packing." />
+    <Error Condition="!Exists('$(PublishShimRepositoryRoot)tools\win-x64\publishshim.winexe.exe')"
+           Text="The win-x64 GUI shim was not generated. Run scripts\Prepare-DevLayout.ps1 before packing." />
+
+    <ItemGroup>
+      <_PublishShimPackageTask Include="$(PublishShimRepositoryRoot)tasks\PublishShim.MSBuild.Tasks.dll" />
+      <_PublishShimPackageNative Include="$(PublishShimRepositoryRoot)tools\win-x64\publishshim.exe" />
+      <_PublishShimPackageNative Include="$(PublishShimRepositoryRoot)tools\win-x64\publishshim.winexe.exe" />
+      <None Include="@(_PublishShimPackageTask)" Pack="true" PackagePath="tasks\PublishShim.MSBuild.Tasks.dll" />
+      <None Include="@(_PublishShimPackageNative)" Pack="true" PackagePath="tools\win-x64\%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <None Include="$(PublishShimRepositoryRoot)build\PublishShim.MSBuild.targets"
+          Pack="true"
+          PackagePath="build\PublishShim.MSBuild.targets" />
+    <None Include="$(PublishShimRepositoryRoot)README.md"
+          Pack="true"
+          PackagePath="README.md" />
+  </ItemGroup>
+</Project>
