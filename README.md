@@ -144,6 +144,53 @@ else
 
 たとえば同じコンソール subsystem の実体に対して、`Exe` shim は標準入出力を引き継いで終了コードを返し、`WinExe` shim は `CREATE_NO_WINDOW` で起動してすぐ終了する、という構成にできます。これにより、実体アプリケーションを複製せずに CLI と GUI のエントリポイントを提供できます。
 
+### 複数のshimを生成するMSBuild手順
+
+標準の `GeneratePublishShim` ターゲットは、退避Taskを一度呼び出したあと、標準のエントリポイント用shimを生成します。複数のエントリポイントを作る場合は、カスタムターゲットから `RelocatePublishArtifactsTask` を一度呼び出し、`GeneratePublishShimTask` をエントリポイントごとに呼び出します。
+
+`RelocatePublishArtifactsTask` はpublish成果物を `ShimDirectory` へ移動し、実体アプリケーションへの相対パスを出力します。`GeneratePublishShimTask` はその相対パスを受け取り、指定した名前と種類のshimをpublishルートへ生成します。`PublishShim.MSBuild.targets` をimport済みであることが前提です。
+
+次の例では、`MyApp.exe` を `.app\MyApp.exe` へ退避し、同じ実体を起動する `MyApp-cli.exe` と `MyApp-gui.exe` を生成します。
+
+```xml
+<PropertyGroup>
+  <!-- 標準ターゲットの代わりに下のカスタムターゲットを使う -->
+  <PublishShim>false</PublishShim>
+  <PublishShimTargetExecutableName>MyApp.exe</PublishShimTargetExecutableName>
+</PropertyGroup>
+
+<Target Name="GenerateMultiplePublishShims" AfterTargets="Publish">
+  <!-- publish成果物を一度だけ退避する -->
+  <RelocatePublishArtifactsTask
+      PublishDirectory="$(PublishDir)"
+      TargetExecutableName="$(PublishShimTargetExecutableName)"
+      ShimDirectory=".app">
+    <Output TaskParameter="ActualApplicationRelativePath"
+            PropertyName="_PublishShimActualApplicationRelativePath" />
+  </RelocatePublishArtifactsTask>
+
+  <!-- 退避した同じ実体を指すshimをエントリポイントごとに生成する -->
+  <GeneratePublishShimTask
+      PublishDirectory="$(PublishDir)"
+      ShimExecutableName="MyApp-cli.exe"
+      TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
+      PublishShimKind="Exe"
+      RuntimeIdentifier="$(RuntimeIdentifier)"
+      NativeShimPath="$(PublishShimNativeShimPath)"
+      NativeShimDirectory="$(PublishShimNativeShimDirectory)" />
+  <GeneratePublishShimTask
+      PublishDirectory="$(PublishDir)"
+      ShimExecutableName="MyApp-gui.exe"
+      TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
+      PublishShimKind="WinExe"
+      RuntimeIdentifier="$(RuntimeIdentifier)"
+      NativeShimPath="$(PublishShimNativeShimPath)"
+      NativeShimDirectory="$(PublishShimNativeShimDirectory)" />
+</Target>
+```
+
+`GeneratePublishShimTask` の `ShimExecutableName` は生成するshimのファイル名、`TargetRelativePath` は実体アプリケーションへの相対パスです。両者を分けて指定するため、複数のshimが同じ実体を指せます。
+
 ## サンプル
 
 `samples/PublishShim.Sample` は最小構成のサンプルです。

@@ -12,6 +12,8 @@
 	<_PublishShimAfterTargets Condition="'$(PublishAot)' != 'true'">Publish</_PublishShimAfterTargets>
   </PropertyGroup>
 
+	<UsingTask TaskName="PublishShim.MSBuild.Tasks.RelocatePublishArtifactsTask"
+			 AssemblyFile="$(PublishShimTaskAssemblyPath)" />
   <UsingTask TaskName="PublishShim.MSBuild.Tasks.GeneratePublishShimTask"
 			 AssemblyFile="$(PublishShimTaskAssemblyPath)" />
 
@@ -27,15 +29,21 @@
 	<Error Condition="'$(PublishShimTargetExecutableName)' == ''"
 		   Text="PublishShim could not determine the target executable name." />
 
-	<GeneratePublishShimTask PublishDirectory="$(PublishDir)"
-						 TargetExecutableName="$(PublishShimTargetExecutableName)"
-						 PublishShimKind="$(PublishShimKind)"
-						 ShimDirectory="$(PublishShimDirectory)"
-						 RuntimeIdentifier="$(RuntimeIdentifier)"
-						 NativeShimPath="$(PublishShimNativeShimPath)"
-						 NativeShimDirectory="$(PublishShimNativeShimDirectory)">
-	  <Output TaskParameter="GeneratedShimPath" PropertyName="PublishShimGeneratedShimPath" />
+	<RelocatePublishArtifactsTask PublishDirectory="$(PublishDir)"
+								  TargetExecutableName="$(PublishShimTargetExecutableName)"
+								  ShimDirectory="$(PublishShimDirectory)">
 	  <Output TaskParameter="ActualApplicationPath" PropertyName="PublishShimActualApplicationPath" />
+	  <Output TaskParameter="ActualApplicationRelativePath" PropertyName="PublishShimActualApplicationRelativePath" />
+	</RelocatePublishArtifactsTask>
+
+	<GeneratePublishShimTask PublishDirectory="$(PublishDir)"
+							 ShimExecutableName="$(PublishShimTargetExecutableName)"
+							 TargetRelativePath="$(PublishShimActualApplicationRelativePath)"
+							 PublishShimKind="$(PublishShimKind)"
+							 RuntimeIdentifier="$(RuntimeIdentifier)"
+							 NativeShimPath="$(PublishShimNativeShimPath)"
+							 NativeShimDirectory="$(PublishShimNativeShimDirectory)">
+	  <Output TaskParameter="GeneratedShimPath" PropertyName="PublishShimGeneratedShimPath" />
 	</GeneratePublishShimTask>
 
 	<Message Importance="High"

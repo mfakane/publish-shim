@@ -38,9 +38,10 @@ public sealed class GeneratePublishShimTask : BuildTask
     public string PublishDirectory { get; set; } = string.Empty;
 
     [Required]
-    public string TargetExecutableName { get; set; } = string.Empty;
+    public string ShimExecutableName { get; set; } = string.Empty;
 
-    public string ShimDirectory { get; set; } = ".app";
+    [Required]
+    public string TargetRelativePath { get; set; } = string.Empty;
 
     [Required]
     public string RuntimeIdentifier { get; set; } = string.Empty;
@@ -54,42 +55,25 @@ public sealed class GeneratePublishShimTask : BuildTask
     [Output]
     public string GeneratedShimPath { get; private set; } = string.Empty;
 
-    [Output]
-    public string ActualApplicationPath { get; private set; } = string.Empty;
-
     public override bool Execute()
     {
         try
         {
             var publishDirectory = Path.GetFullPath(PublishDirectory);
-            var targetExecutableName = TargetExecutableName.Trim();
-            var normalizedShimDirectory = NormalizeShimDirectory(ShimDirectory, publishDirectory);
-            var publishedExecutablePath = Path.Combine(publishDirectory, targetExecutableName);
-            var actualApplicationRelativePath = Path.Combine(normalizedShimDirectory, targetExecutableName).Replace('/', '\\');
-            var actualApplicationPath = Path.Combine(publishDirectory, actualApplicationRelativePath);
-            var generatedShimPath = Path.Combine(publishDirectory, targetExecutableName);
+            var shimExecutableName = PublishShimPathUtilities.NormalizeFileName(ShimExecutableName, nameof(ShimExecutableName));
+            var targetRelativePath = PublishShimPathUtilities.NormalizeRelativePath(TargetRelativePath, publishDirectory, nameof(TargetRelativePath));
+            var targetPath = Path.Combine(publishDirectory, targetRelativePath);
+            var generatedShimPath = Path.Combine(publishDirectory, shimExecutableName);
 
-            ValidateInputs(publishDirectory, targetExecutableName, normalizedShimDirectory, publishedExecutablePath);
+            ValidateInputs(publishDirectory, targetPath, generatedShimPath);
 
-            var nativeShimPath = ResolveNativeShimPath(RuntimeIdentifier, NativeShimPath, NativeShimDirectory, PublishShimKind, publishedExecutablePath);
-
-            PrepareDestinationDirectory(actualApplicationPath);
-            MovePublishArtifacts(publishDirectory, normalizedShimDirectory);
-
-            if (!File.Exists(actualApplicationPath))
-            {
-                Log.LogError($"The published target executable was not found after relocation: '{actualApplicationPath}'.");
-                return false;
-            }
+            var nativeShimPath = ResolveNativeShimPath(RuntimeIdentifier, NativeShimPath, NativeShimDirectory, PublishShimKind, targetPath);
 
             CopyShim(nativeShimPath, generatedShimPath);
-            AppendConfiguration(generatedShimPath, actualApplicationRelativePath);
+            AppendConfiguration(generatedShimPath, targetRelativePath);
 
             GeneratedShimPath = generatedShimPath;
-            ActualApplicationPath = actualApplicationPath;
-
             Log.LogMessage(MessageImportance.High, $"Generated publish shim: '{generatedShimPath}'.");
-            Log.LogMessage(MessageImportance.High, $"Relocated application: '{actualApplicationPath}'.");
             return !Log.HasLoggedErrors;
         }
         catch (Exception ex)
@@ -99,64 +83,25 @@ public sealed class GeneratePublishShimTask : BuildTask
         }
     }
 
-    private static void ValidateInputs(string publishDirectory, string targetExecutableName, string normalizedShimDirectory, string publishedExecutablePath)
+    private static void ValidateInputs(string publishDirectory, string targetPath, string generatedShimPath)
     {
         if (!Directory.Exists(publishDirectory))
         {
             throw new DirectoryNotFoundException($"The publish directory does not exist: '{publishDirectory}'.");
         }
 
-        if (string.IsNullOrWhiteSpace(targetExecutableName))
+        if (!File.Exists(targetPath))
         {
-            throw new InvalidOperationException("TargetExecutableName must be provided.");
+            throw new FileNotFoundException($"The target executable was not found: '{targetPath}'.", targetPath);
         }
 
-        if (targetExecutableName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        if (PublishShimPathUtilities.PathEquals(targetPath, generatedShimPath))
         {
-            throw new InvalidOperationException($"TargetExecutableName contains invalid path characters: '{targetExecutableName}'.");
-        }
-
-        if (string.IsNullOrWhiteSpace(normalizedShimDirectory))
-        {
-            throw new InvalidOperationException("ShimDirectory must resolve to a non-empty relative path.");
-        }
-
-        if (!File.Exists(publishedExecutablePath))
-        {
-            throw new FileNotFoundException($"The published target executable was not found: '{publishedExecutablePath}'.", publishedExecutablePath);
+            throw new InvalidOperationException("ShimExecutableName must not overwrite TargetRelativePath.");
         }
     }
 
-    private string NormalizeShimDirectory(string shimDirectory, string publishDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(shimDirectory))
-        {
-            throw new InvalidOperationException("ShimDirectory must be provided.");
-        }
-
-        var trimmed = shimDirectory.Trim().Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-        if (Path.IsPathRooted(trimmed))
-        {
-            throw new InvalidOperationException($"ShimDirectory must be relative to the publish root: '{shimDirectory}'.");
-        }
-
-        var combined = Path.GetFullPath(Path.Combine(publishDirectory, trimmed));
-        var publishRoot = AppendDirectorySeparator(Path.GetFullPath(publishDirectory));
-        if (!combined.StartsWith(publishRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException($"ShimDirectory escapes the publish root: '{shimDirectory}'.");
-        }
-
-        var relative = Path.GetRelativePath(publishDirectory, combined);
-        if (relative is "." or "")
-        {
-            throw new InvalidOperationException("ShimDirectory must not point to the publish root.");
-        }
-
-        return relative;
-    }
-
-    private string ResolveNativeShimPath(string runtimeIdentifier, string? nativeShimPath, string? nativeShimDirectory, string publishShimKind, string publishedExecutablePath)
+    private string ResolveNativeShimPath(string runtimeIdentifier, string? nativeShimPath, string? nativeShimDirectory, string publishShimKind, string targetPath)
     {
         if (!string.IsNullOrWhiteSpace(nativeShimPath))
         {
@@ -176,7 +121,7 @@ public sealed class GeneratePublishShimTask : BuildTask
 
         var requestedKind = ParsePublishShimKind(publishShimKind);
         var resolvedKind = requestedKind == PublishShimKindValue.Auto
-            ? DetectPublishShimKind(publishedExecutablePath)
+            ? DetectPublishShimKind(targetPath)
             : requestedKind;
         var toolsRoot = string.IsNullOrWhiteSpace(nativeShimDirectory)
             ? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "tools"))
@@ -209,31 +154,31 @@ public sealed class GeneratePublishShimTask : BuildTask
         };
     }
 
-    private static PublishShimKindValue DetectPublishShimKind(string publishedExecutablePath)
+    private static PublishShimKindValue DetectPublishShimKind(string targetPath)
     {
-        return ReadSubsystem(publishedExecutablePath) switch
+        return ReadSubsystem(targetPath) switch
         {
             ImageSubsystem.WindowsCui => PublishShimKindValue.Exe,
             ImageSubsystem.WindowsGui => PublishShimKindValue.WinExe,
-            var subsystem => throw new InvalidOperationException($"The published target executable '{publishedExecutablePath}' uses unsupported PE subsystem '{subsystem}'."),
+            var subsystem => throw new InvalidOperationException($"The target executable '{targetPath}' uses unsupported PE subsystem '{subsystem}'."),
         };
     }
 
-    private static ImageSubsystem ReadSubsystem(string publishedExecutablePath)
+    private static ImageSubsystem ReadSubsystem(string targetPath)
     {
-        using var stream = new FileStream(publishedExecutablePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var stream = new FileStream(targetPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         Span<byte> dosHeader = stackalloc byte[64];
         ReadExactly(stream, dosHeader);
 
         if (BinaryPrimitives.ReadUInt16LittleEndian(dosHeader) != DosSignature)
         {
-            throw new InvalidOperationException($"The published target executable '{publishedExecutablePath}' is not a valid MZ executable.");
+            throw new InvalidOperationException($"The target executable '{targetPath}' is not a valid MZ executable.");
         }
 
         var peHeaderOffset = BinaryPrimitives.ReadInt32LittleEndian(dosHeader.Slice(PeHeaderPointerOffset, sizeof(int)));
         if (peHeaderOffset < 0)
         {
-            throw new InvalidOperationException($"The published target executable '{publishedExecutablePath}' has an invalid PE header offset.");
+            throw new InvalidOperationException($"The target executable '{targetPath}' has an invalid PE header offset.");
         }
 
         stream.Position = peHeaderOffset;
@@ -242,19 +187,19 @@ public sealed class GeneratePublishShimTask : BuildTask
 
         if (BinaryPrimitives.ReadUInt32LittleEndian(headers) != PeSignature)
         {
-            throw new InvalidOperationException($"The published target executable '{publishedExecutablePath}' is missing a valid PE signature.");
+            throw new InvalidOperationException($"The target executable '{targetPath}' is missing a valid PE signature.");
         }
 
         var optionalHeaderSize = BinaryPrimitives.ReadUInt16LittleEndian(headers.Slice(OptionalHeaderSizeOffset, sizeof(ushort)));
         if (optionalHeaderSize < SubsystemOffset + sizeof(ushort))
         {
-            throw new InvalidOperationException($"The published target executable '{publishedExecutablePath}' has an incomplete optional header.");
+            throw new InvalidOperationException($"The target executable '{targetPath}' has an incomplete optional header.");
         }
 
         var optionalHeaderMagic = BinaryPrimitives.ReadUInt16LittleEndian(headers.Slice(OptionalHeaderStartOffset, sizeof(ushort)));
         if (optionalHeaderMagic is not Pe32Magic and not Pe32PlusMagic)
         {
-            throw new InvalidOperationException($"The published target executable '{publishedExecutablePath}' uses unsupported optional header magic '0x{optionalHeaderMagic:X4}'.");
+            throw new InvalidOperationException($"The target executable '{targetPath}' uses unsupported optional header magic '0x{optionalHeaderMagic:X4}'.");
         }
 
         return (ImageSubsystem)BinaryPrimitives.ReadUInt16LittleEndian(headers.Slice(OptionalHeaderStartOffset + SubsystemOffset, sizeof(ushort)));
@@ -272,43 +217,6 @@ public sealed class GeneratePublishShimTask : BuildTask
             }
 
             remaining = remaining[bytesRead..];
-        }
-    }
-
-    private static void PrepareDestinationDirectory(string actualApplicationPath)
-    {
-        var actualApplicationDirectory = Path.GetDirectoryName(actualApplicationPath)
-            ?? throw new InvalidOperationException("Failed to resolve the shim destination directory.");
-
-        if (Directory.Exists(actualApplicationDirectory))
-        {
-            Directory.Delete(actualApplicationDirectory, recursive: true);
-        }
-
-        Directory.CreateDirectory(actualApplicationDirectory);
-    }
-
-    private void MovePublishArtifacts(string publishDirectory, string normalizedShimDirectory)
-    {
-        var destinationDirectory = Path.Combine(publishDirectory, normalizedShimDirectory);
-        var rootEntries = new DirectoryInfo(publishDirectory)
-            .EnumerateFileSystemInfos()
-            .Where(entry => !PathEquals(entry.FullName, destinationDirectory))
-            .ToArray();
-
-        foreach (var entry in rootEntries)
-        {
-            var destinationPath = Path.Combine(destinationDirectory, entry.Name);
-            Log.LogMessage(MessageImportance.Low, $"Moving '{entry.FullName}' to '{destinationPath}'.");
-
-            if (entry.Attributes.HasFlag(FileAttributes.Directory))
-            {
-                Directory.Move(entry.FullName, destinationPath);
-            }
-            else
-            {
-                File.Move(entry.FullName, destinationPath);
-            }
         }
     }
 
@@ -337,18 +245,4 @@ public sealed class GeneratePublishShimTask : BuildTask
         writer.Write(sizeof(int) + normalizedRelativePath.Length * sizeof(char));
     }
 
-    private static string AppendDirectorySeparator(string path)
-    {
-        return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
-            ? path
-            : path + Path.DirectorySeparatorChar;
-    }
-
-    private static bool PathEquals(string left, string right)
-    {
-        return string.Equals(
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
-            StringComparison.OrdinalIgnoreCase);
-    }
 }

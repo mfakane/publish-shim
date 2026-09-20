@@ -95,6 +95,7 @@ internal static class Program
             await RunScenarioAsync("native-aot", publishShim: true, outputType: "Exe", kind: "Auto", shimDirectory: null, verify: VerifyNativeAotAsync, publishAot: true, repeatPublish: false);
             await RunScenarioAsync("custom-exe", publishShim: true, outputType: "Exe", kind: "Exe", shimDirectory: "payload", verify: VerifyConsoleAsync);
             await RunScenarioAsync("winexe", publishShim: true, outputType: "WinExe", kind: "WinExe", shimDirectory: null, verify: VerifyWinExeAsync);
+            await RunScenarioAsync("multiple-entrypoints", publishShim: false, outputType: "Exe", kind: null, shimDirectory: null, verify: VerifyMultipleEntryPointsAsync, repeatPublish: false, customTargets: CreateMultipleEntryPointTargets());
         }
 
         private async Task RunScenarioAsync(
@@ -105,7 +106,8 @@ internal static class Program
             string? shimDirectory,
             Func<string, string, string, Task> verify,
             bool publishAot = false,
-            bool repeatPublish = true)
+            bool repeatPublish = true,
+            string? customTargets = null)
         {
             var scenarioDirectory = Path.Combine(testRoot, name);
             Directory.CreateDirectory(scenarioDirectory);
@@ -114,7 +116,7 @@ internal static class Program
             var publishDirectory = Path.Combine(scenarioDirectory, "publish");
             var outputPath = Path.Combine(scenarioDirectory, "出力", "sample-output.txt");
 
-            await File.WriteAllTextAsync(projectPath, CreateProject(projectName, publishShim, outputType, kind, shimDirectory, publishAot));
+            await File.WriteAllTextAsync(projectPath, CreateProject(projectName, publishShim, outputType, kind, shimDirectory, publishAot, customTargets));
             await File.WriteAllTextAsync(Path.Combine(scenarioDirectory, "Program.cs"), CreateSampleProgram());
             await File.WriteAllTextAsync(Path.Combine(scenarioDirectory, "NuGet.Config"), CreateNuGetConfig(publishAot));
 
@@ -123,7 +125,7 @@ internal static class Program
 
             await verify(publishDirectory, projectName, outputPath);
 
-            if (publishShim && repeatPublish)
+            if (repeatPublish && (publishShim || customTargets is not null))
             {
                 RunDotnet(scenarioDirectory, "publish", projectPath, "--configuration", "Release", "--no-restore", "--output", publishDirectory);
                 await verify(publishDirectory, projectName, outputPath);
@@ -233,7 +235,56 @@ internal static class Program
             Assert(output.Contains($"PublishShimExe={executable}", StringComparison.OrdinalIgnoreCase), "The GUI shim must expose its executable path through PUBLISH_SHIM_EXE.");
         }
 
-        private string CreateProject(string projectName, bool publishShim, string outputType, string? kind, string? shimDirectory, bool publishAot)
+        private async Task VerifyMultipleEntryPointsAsync(string publishDirectory, string projectName, string outputPath)
+        {
+            var cliExecutable = Path.Combine(publishDirectory, $"{projectName}-cli.exe");
+            var guiExecutable = Path.Combine(publishDirectory, $"{projectName}-gui.exe");
+            var application = Path.Combine(publishDirectory, ".app", $"{projectName}.exe");
+            var cliOutputPath = Path.Combine(Path.GetDirectoryName(outputPath)!, "multiple-cli.txt");
+            var guiOutputPath = Path.Combine(Path.GetDirectoryName(outputPath)!, "multiple-gui.txt");
+
+            Assert(File.Exists(cliExecutable), "The CLI entry point shim is missing.");
+            Assert(File.Exists(guiExecutable), "The GUI entry point shim is missing.");
+            Assert(File.Exists(application), "The shared application executable is missing.");
+            Assert(!File.Exists(Path.Combine(publishDirectory, $"{projectName}.exe")), "The custom entry point target must not leave the original executable in the publish root.");
+
+            var cliResult = RunProcess(
+                cliExecutable,
+                publishDirectory,
+                new[] { "--exit", "43" },
+                new Dictionary<string, string?>
+                {
+                    ["PUBLISH_SHIM_SAMPLE_OUTPUT"] = cliOutputPath,
+                    ["PUBLISH_SHIM_ROOT"] = "stale-root-value",
+                    ["PUBLISH_SHIM_EXE"] = "stale-exe-value"
+                },
+                redirectOutput: true);
+
+            Assert(cliResult.ExitCode == 43, $"The CLI entry point must propagate the child exit code. Actual: {cliResult.ExitCode}.");
+            var cliOutput = await File.ReadAllTextAsync(cliOutputPath);
+            Assert(cliOutput.Contains($"PublishShimRoot={Path.GetFullPath(publishDirectory)}", StringComparison.OrdinalIgnoreCase), "The CLI entry point must expose the shared publish root.");
+            Assert(cliOutput.Contains($"PublishShimExe={cliExecutable}", StringComparison.OrdinalIgnoreCase), "The CLI entry point must expose its own shim path.");
+
+            var guiResult = RunProcess(
+                guiExecutable,
+                publishDirectory,
+                Array.Empty<string>(),
+                new Dictionary<string, string?>
+                {
+                    ["PUBLISH_SHIM_SAMPLE_OUTPUT"] = guiOutputPath,
+                    ["PUBLISH_SHIM_ROOT"] = "stale-root-value",
+                    ["PUBLISH_SHIM_EXE"] = "stale-exe-value"
+                },
+                redirectOutput: false);
+
+            Assert(guiResult.ExitCode == 0, $"The GUI entry point must exit successfully after spawning the child. Actual: {guiResult.ExitCode}.");
+            await WaitForFileAsync(guiOutputPath);
+            var guiOutput = await File.ReadAllTextAsync(guiOutputPath);
+            Assert(guiOutput.Contains($"PublishShimRoot={Path.GetFullPath(publishDirectory)}", StringComparison.OrdinalIgnoreCase), "The GUI entry point must expose the shared publish root.");
+            Assert(guiOutput.Contains($"PublishShimExe={guiExecutable}", StringComparison.OrdinalIgnoreCase), "The GUI entry point must expose its own shim path.");
+        }
+
+        private string CreateProject(string projectName, bool publishShim, string outputType, string? kind, string? shimDirectory, bool publishAot, string? customTargets = null)
         {
             var kindProperty = kind is null ? string.Empty : $"\n    <PublishShimKind>{kind}</PublishShimKind>";
             var directoryProperty = shimDirectory is null ? string.Empty : $"\n    <PublishShimDirectory>{shimDirectory}</PublishShimDirectory>";
@@ -252,9 +303,38 @@ internal static class Program
   <ItemGroup>
     <PackageReference Include=""PublishShim.MSBuild"" Version=""{packageVersion}"" />
   </ItemGroup>
+{customTargets}
 </Project>
 ";
         }
+
+        private static string CreateMultipleEntryPointTargets() => """
+  <Target Name="GenerateMultiplePublishShims" AfterTargets="Publish">
+    <RelocatePublishArtifactsTask
+        PublishDirectory="$(PublishDir)"
+        TargetExecutableName="$(AssemblyName).exe"
+        ShimDirectory=".app">
+      <Output TaskParameter="ActualApplicationRelativePath"
+              PropertyName="_PublishShimActualApplicationRelativePath" />
+    </RelocatePublishArtifactsTask>
+    <GeneratePublishShimTask
+        PublishDirectory="$(PublishDir)"
+        ShimExecutableName="$(AssemblyName)-cli.exe"
+        TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
+        PublishShimKind="Exe"
+        RuntimeIdentifier="$(RuntimeIdentifier)"
+        NativeShimPath="$(PublishShimNativeShimPath)"
+        NativeShimDirectory="$(PublishShimNativeShimDirectory)" />
+    <GeneratePublishShimTask
+        PublishDirectory="$(PublishDir)"
+        ShimExecutableName="$(AssemblyName)-gui.exe"
+        TargetRelativePath="$(_PublishShimActualApplicationRelativePath)"
+        PublishShimKind="WinExe"
+        RuntimeIdentifier="$(RuntimeIdentifier)"
+        NativeShimPath="$(PublishShimNativeShimPath)"
+        NativeShimDirectory="$(PublishShimNativeShimDirectory)" />
+  </Target>
+""";
 
         private static string CreateSampleProgram() => """
 using System.Text;
