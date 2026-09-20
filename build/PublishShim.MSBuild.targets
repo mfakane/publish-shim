@@ -8,13 +8,15 @@
 	<PublishShimNativeShimPath Condition="'$(PublishShimNativeShimPath)' == ''"></PublishShimNativeShimPath>
 	<PublishShimTargetExecutableName Condition="'$(PublishShimTargetExecutableName)' == '' and '$(TargetName)' != ''">$(TargetName).exe</PublishShimTargetExecutableName>
 	<PublishShimTargetExecutableName Condition="'$(PublishShimTargetExecutableName)' == '' and '$(AssemblyName)' != ''">$(AssemblyName).exe</PublishShimTargetExecutableName>
+	<_PublishShimAfterTargets Condition="'$(PublishAot)' == 'true'">CopyNativeBinary</_PublishShimAfterTargets>
+	<_PublishShimAfterTargets Condition="'$(PublishAot)' != 'true'">Publish</_PublishShimAfterTargets>
   </PropertyGroup>
 
   <UsingTask TaskName="PublishShim.MSBuild.Tasks.GeneratePublishShimTask"
 			 AssemblyFile="$(PublishShimTaskAssemblyPath)" />
 
   <Target Name="GeneratePublishShim"
-		  AfterTargets="Publish"
+		  AfterTargets="$(_PublishShimAfterTargets)"
 		  Condition="'$(PublishShim)' == 'true'">
 	<Error Condition="'$(RuntimeIdentifier)' == ''"
 		   Text="PublishShim requires RuntimeIdentifier to be set." />
