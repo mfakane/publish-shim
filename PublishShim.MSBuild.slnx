@@ -1,0 +1,15 @@
+<Solution>
+  <Configurations>
+    <Platform Name="AnyCPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path="build/PublishShim.MSBuild.targets" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="PublishShim.Exe/PublishShim.Exe.vcxproj" Id="4b70b39c-82e6-422f-aad9-c0d8b4bc7ba5" />
+  <Project Path="PublishShim.MSBuild.Tasks/PublishShim.MSBuild.Tasks.csproj" />
+  <Project Path="PublishShim.WinExe/PublishShim.WinExe.vcxproj" Id="8a35471c-fc8d-4ad5-a09a-12497917f6f0" />
+  <Project Path="samples/PublishShim.Sample/PublishShim.Sample.csproj" />
+</Solution>

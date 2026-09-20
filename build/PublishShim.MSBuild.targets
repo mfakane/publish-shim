@@ -1,0 +1,37 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+	<PublishShim Condition="'$(PublishShim)' == ''">false</PublishShim>
+	<PublishShimKind Condition="'$(PublishShimKind)' == ''">Auto</PublishShimKind>
+	<PublishShimDirectory Condition="'$(PublishShimDirectory)' == ''">.app</PublishShimDirectory>
+	<PublishShimTaskAssemblyPath Condition="'$(PublishShimTaskAssemblyPath)' == ''">$(MSBuildThisFileDirectory)..\tasks\PublishShim.MSBuild.Tasks.dll</PublishShimTaskAssemblyPath>
+	<PublishShimTargetExecutableName Condition="'$(PublishShimTargetExecutableName)' == '' and '$(TargetFileName)' != ''">$(TargetFileName)</PublishShimTargetExecutableName>
+	<PublishShimTargetExecutableName Condition="'$(PublishShimTargetExecutableName)' == '' and '$(TargetName)' != ''">$(TargetName).exe</PublishShimTargetExecutableName>
+	<PublishShimTargetExecutableName Condition="'$(PublishShimTargetExecutableName)' == '' and '$(AssemblyName)' != ''">$(AssemblyName).exe</PublishShimTargetExecutableName>
+  </PropertyGroup>
+
+  <UsingTask TaskName="PublishShim.MSBuild.Tasks.GeneratePublishShimTask"
+			 AssemblyFile="$(PublishShimTaskAssemblyPath)" />
+
+  <Target Name="GeneratePublishShim"
+		  AfterTargets="Publish"
+		  Condition="'$(PublishShim)' == 'true'">
+	<Error Condition="'$(RuntimeIdentifier)' == ''"
+		   Text="PublishShim requires RuntimeIdentifier to be set." />
+	<Error Condition="'$(PublishDir)' == ''"
+		   Text="PublishShim requires PublishDir to be available." />
+	<Error Condition="'$(PublishShimTargetExecutableName)' == ''"
+		   Text="PublishShim could not determine the target executable name." />
+
+	<GeneratePublishShimTask PublishDirectory="$(PublishDir)"
+						 TargetExecutableName="$(PublishShimTargetExecutableName)"
+						 PublishShimKind="$(PublishShimKind)"
+						 ShimDirectory="$(PublishShimDirectory)"
+						 RuntimeIdentifier="$(RuntimeIdentifier)">
+	  <Output TaskParameter="GeneratedShimPath" PropertyName="PublishShimGeneratedShimPath" />
+	  <Output TaskParameter="ActualApplicationPath" PropertyName="PublishShimActualApplicationPath" />
+	</GeneratePublishShimTask>
+
+	<Message Importance="High"
+			 Text="Publish shim generated at $(PublishShimGeneratedShimPath); relocated application at $(PublishShimActualApplicationPath)." />
+  </Target>
+</Project>

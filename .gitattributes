@@ -1,0 +1,37 @@
+# Normalize text in the repository; use explicit working-tree endings below.
+* text=auto
+
+# Windows and Visual Studio source files
+*.c          text eol=crlf
+*.h          text eol=crlf
+*.cs         text eol=crlf
+*.ps1        text eol=crlf
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+*.csproj     text eol=crlf
+*.vcxproj    text eol=crlf
+*.filters    text eol=crlf
+*.props      text eol=crlf
+*.targets    text eol=crlf
+*.sln        text eol=crlf
+*.slnx       text eol=crlf
+
+# Cross-platform text and configuration files
+*.md         text eol=lf
+*.json       text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+.gitignore   text eol=lf
+.gitattributes text eol=lf
+
+# Binary artifacts
+*.dll        binary
+*.exe        binary
+*.pdb        binary
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.ico        binary
+*.zip        binary
+*.nupkg      binary
