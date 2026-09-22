@@ -78,7 +78,7 @@ public sealed class RelocatePublishArtifactsTask : BuildTask
             }
 
             fullPath = Path.GetFullPath(fullPath);
-            var relativePath = Path.GetRelativePath(publishDirectory, fullPath);
+            var relativePath = PublishShimPathUtilities.GetRelativePath(publishDirectory, fullPath);
             relativePath = PublishShimPathUtilities.NormalizeRelativePath(relativePath, publishDirectory, "Files");
             var normalizedPath = Path.Combine(publishDirectory, relativePath);
             if (IsPathUnderDirectory(normalizedPath, destinationDirectory))
@@ -135,7 +135,7 @@ public sealed class RelocatePublishArtifactsTask : BuildTask
     {
         foreach (var sourcePath in sourceFiles)
         {
-            var relativePath = Path.GetRelativePath(publishDirectory, sourcePath);
+            var relativePath = PublishShimPathUtilities.GetRelativePath(publishDirectory, sourcePath);
             var destinationPath = Path.Combine(destinationDirectory, relativePath);
             var parentDirectory = Path.GetDirectoryName(destinationPath)
                 ?? throw new InvalidOperationException("Failed to resolve a relocated file's destination directory.");
@@ -148,8 +148,8 @@ public sealed class RelocatePublishArtifactsTask : BuildTask
 
     private static bool IsPathUnderDirectory(string path, string directory)
     {
-        var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-        var fullDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        var fullPath = PublishShimPathUtilities.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        var fullDirectory = PublishShimPathUtilities.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         return string.Equals(fullPath, fullDirectory, StringComparison.OrdinalIgnoreCase)
             || fullPath.StartsWith(fullDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             || fullPath.StartsWith(fullDirectory + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
