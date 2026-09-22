@@ -56,7 +56,7 @@ Invoke-NativeMsBuild @(
 )
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$taskOutput = Join-Path $root "PublishShim.MSBuild.Tasks/bin/$Configuration/net8.0"
+$taskOutput = Join-Path $root "PublishShim.MSBuild.Tasks/bin/$Configuration/netstandard2.0"
 $consoleShimOutput = Get-ChildItem -Path $root -Recurse -Filter 'publishshim.exe' | Where-Object { $_.FullName -like "*$Configuration*" } | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
 $guiShimOutput = Get-ChildItem -Path $root -Recurse -Filter 'publishshim.winexe.exe' | Where-Object { $_.FullName -like "*$Configuration*" } | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
 if (-not $consoleShimOutput) { throw 'Console native shim output was not found.' }

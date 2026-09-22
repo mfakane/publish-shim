@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "matchCurrentVersion": "!/^0/",
+      "automerge": true
+    },
+    {
+      // MSBuild task assemblies run inside the caller's MSBuild host. A major
+      // Microsoft.Build.* bump can therefore raise the minimum supported
+      // MSBuild version even when the task itself does not need newer APIs.
+      // Keep major upgrades manual so compatibility changes are intentional.
+      "matchPackageNames": [
+        "Microsoft.Build.Framework",
+        "Microsoft.Build.Utilities.Core"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    }
+  ]
+}

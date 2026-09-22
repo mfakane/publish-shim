@@ -224,16 +224,20 @@ public sealed class GeneratePublishShimTask : BuildTask
 
     private static void ReadExactly(FileStream stream, Span<byte> buffer)
     {
-        var remaining = buffer;
-        while (!remaining.IsEmpty)
+        var temporaryBuffer = new byte[Math.Min(buffer.Length, 81920)];
+        var offset = 0;
+        while (offset < buffer.Length)
         {
-            var bytesRead = stream.Read(remaining);
+            var count = Math.Min(temporaryBuffer.Length, buffer.Length - offset);
+            var bytesRead = stream.Read(temporaryBuffer, 0, count);
             if (bytesRead == 0)
             {
                 throw new EndOfStreamException($"Unexpected end of file while reading '{stream.Name}'.");
             }
 
-            remaining = remaining[bytesRead..];
+            new ReadOnlySpan<byte>(temporaryBuffer, 0, bytesRead)
+                .CopyTo(buffer.Slice(offset, bytesRead));
+            offset += bytesRead;
         }
     }
 
