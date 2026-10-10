@@ -30,7 +30,7 @@ The shim runs as `MyApp.exe` and starts `.app/MyApp.exe` using the configuration
 
 ### NuGet package
 
-The initial release is distributed as the `PublishShim.MSBuild` package with native shims for `win-x64`. Referencing the package automatically imports the MSBuild targets.
+The `PublishShim.MSBuild` package ships native shims for `win-x64` and, from 0.1.2, `win-arm64`. Referencing the package automatically imports the MSBuild targets.
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -42,12 +42,12 @@ The initial release is distributed as the `PublishShim.MSBuild` package with nat
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PublishShim.MSBuild" Version="0.1.0" />
+    <PackageReference Include="PublishShim.MSBuild" Version="0.1.2" />
   </ItemGroup>
 </Project>
 ```
 
-Running `dotnet publish` with this configuration generates the shim and the `.app` directory in the publish output. The initial package supports only the `win-x64` RID.
+Running `dotnet publish` with this configuration generates the shim and the `.app` directory in the publish output. The package supports the `win-x64` and `win-arm64` RIDs; each RID gets a shim compiled natively for that architecture. For any other RID, set `PublishShimNativeShimPath`.
 
 The equivalent explicit properties are:
 
@@ -251,15 +251,19 @@ pwsh ./scripts/Prepare-DevLayout.ps1 -Configuration Debug
 This script:
 
 - Builds `PublishShim.MSBuild.Tasks`
-- Builds the console native shim
-- Builds the GUI native shim
-- Copies the required files into `tasks/` and `tools/win-x64/`
+- Builds the console and GUI native shims for x64 and ARM64 (pass `-Platforms x64` to build only one)
+- Checks that each shim's PE machine type matches its architecture
+- Copies the required files into `tasks/`, `tools/win-x64/`, and `tools/win-arm64/`
+
+Building the ARM64 shims requires the Visual Studio C++ ARM64 build tools (`Microsoft.VisualStudio.Component.VC.Tools.ARM64`).
 
 Run the NuGet packaging and integration tests with:
 
 ```powershell
 pwsh ./scripts/Test-Integration.ps1
 ```
+
+The integration tests publish for the machine's architecture (`win-arm64` on ARM64 Windows, otherwise `win-x64`) and check that the generated shims are native for it. Set `PUBLISH_SHIM_TEST_RID` to override.
 
 The integration tests include a Native AOT publish. The Windows App SDK / WinUI 3 smoke test requires a Windows App SDK development environment and the appropriate runtime, so run it separately:
 
@@ -275,7 +279,7 @@ You can also create the package with:
 dotnet pack PublishShim.MSBuild/PublishShim.MSBuild.csproj -c Release
 ```
 
-The package contains `build/PublishShim.MSBuild.targets`, the task DLL, the native shims under `tools/win-x64/`, and the Japanese documentation as `README.ja.md`.
+The package contains `build/PublishShim.MSBuild.targets`, the task DLL, the native shims under `tools/win-x64/` and `tools/win-arm64/`, and the Japanese documentation as `README.ja.md`.
 
 If you use Authenticode signing, append the shim configuration footer before signing the generated shim. Appending the footer after signing invalidates the signature.
 

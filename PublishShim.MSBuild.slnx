@@ -2,6 +2,7 @@
   <Configurations>
     <Platform Name="AnyCPU" />
     <Platform Name="x64" />
+    <Platform Name="ARM64" />
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/Solution Items/">

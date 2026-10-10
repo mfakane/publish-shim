@@ -15,6 +15,7 @@ artifacts/
 **/[Rr]elease/
 **/x64/
 **/x86/
+**/[Aa][Rr][Mm]64/
 **/[Ww]in32/
 *.idb
 *.ilk

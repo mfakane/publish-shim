@@ -52,8 +52,46 @@ jobs:
           dotnet pack $env:PACKAGE_PROJECT --no-restore --configuration Release --output artifacts/packages
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Validate native shims in the package
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $package = Get-ChildItem artifacts/packages/PublishShim.MSBuild.*.nupkg | Select-Object -First 1
+          if (-not $package) { throw 'Package was not found.' }
+          $expected = @{
+            'tools/win-x64/publishshim.exe' = 0x8664
+            'tools/win-x64/publishshim.winexe.exe' = 0x8664
+            'tools/win-arm64/publishshim.exe' = 0xAA64
+            'tools/win-arm64/publishshim.winexe.exe' = 0xAA64
+          }
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
+          try {
+            foreach ($name in $expected.Keys) {
+              $entry = $archive.Entries | Where-Object { $_.FullName.Replace('\', '/') -eq $name } | Select-Object -First 1
+              if (-not $entry) { throw "Package entry is missing: $name" }
+              $stream = $entry.Open()
+              try {
+                $memory = [System.IO.MemoryStream]::new()
+                $stream.CopyTo($memory)
+                $bytes = $memory.ToArray()
+              } finally {
+                $stream.Dispose()
+              }
+              $peOffset = [System.BitConverter]::ToInt32($bytes, 0x3C)
+              $machine = [System.BitConverter]::ToUInt16($bytes, $peOffset + 4)
+              if ($machine -ne $expected[$name]) {
+                throw ("{0} has PE machine 0x{1:X4}; expected 0x{2:X4}" -f $name, $machine, $expected[$name])
+              }
+              Write-Host ("{0}: 0x{1:X4}" -f $name, $machine)
+            }
+          } finally {
+            $archive.Dispose()
+          }
+
       - name: Run integration tests against the package
         shell: pwsh
+        env:
+          PUBLISH_SHIM_TEST_RID: win-x64
         run: |
           [xml]$project = Get-Content -Raw $env:PACKAGE_PROJECT
           $version = @($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
@@ -70,3 +108,57 @@ jobs:
           name: build-package
           if-no-files-found: warn
           path: artifacts/packages/*.nupkg
+
+  test-arm64:
+    name: Run integration tests on Windows ARM64
+    needs: build
+    runs-on: windows-11-arm
+    env:
+      TEST_PROJECT: tests/PublishShim.IntegrationTests/PublishShim.IntegrationTests.csproj
+      PACKAGE_PROJECT: PublishShim.MSBuild/PublishShim.MSBuild.csproj
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Show runner architecture
+        shell: pwsh
+        run: |
+          Write-Host "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+          Write-Host "OSArchitecture=$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
+          dotnet --info
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') {
+            throw 'This job must run on an ARM64 runner.'
+          }
+
+      - name: Download build package
+        uses: actions/download-artifact@v8
+        with:
+          name: build-package
+          path: artifacts/packages
+
+      - name: Build integration tests
+        shell: pwsh
+        run: |
+          dotnet build $env:TEST_PROJECT --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run integration tests against the package
+        shell: pwsh
+        env:
+          PUBLISH_SHIM_TEST_RID: win-arm64
+        run: |
+          [xml]$project = Get-Content -Raw $env:PACKAGE_PROJECT
+          $version = @($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          $packagePath = Join-Path $PWD "artifacts/packages/PublishShim.MSBuild.$version.nupkg"
+          if (-not (Test-Path $packagePath)) { throw "Package was not found: $packagePath" }
+
+          dotnet run --project $env:TEST_PROJECT --no-build --configuration Release -- $packagePath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
