@@ -106,7 +106,9 @@ jobs:
               'build/PublishShim.MSBuild.targets',
               'tasks/PublishShim.MSBuild.Tasks.dll',
               'tools/win-x64/publishshim.exe',
-              'tools/win-x64/publishshim.winexe.exe'
+              'tools/win-x64/publishshim.winexe.exe',
+              'tools/win-arm64/publishshim.exe',
+              'tools/win-arm64/publishshim.winexe.exe'
             )
 
             foreach ($entry in $requiredEntries) {

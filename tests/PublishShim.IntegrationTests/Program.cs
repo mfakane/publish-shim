@@ -75,6 +75,8 @@ internal static class Program
         private readonly string testRoot;
         private readonly string dotnetPath;
         private readonly string packageVersion;
+        private readonly string runtimeIdentifier;
+        private readonly ushort expectedMachine;
 
         public IntegrationTestRunner(string packagePath, string packageDirectory, string testRoot)
         {
@@ -87,6 +89,45 @@ internal static class Program
             packageVersion = packageFileName.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase)
                 ? packageFileName[packagePrefix.Length..]
                 : throw new ArgumentException($"Unexpected package name '{packageFileName}'.", nameof(packagePath));
+            runtimeIdentifier = ResolveRuntimeIdentifier();
+            expectedMachine = runtimeIdentifier switch
+            {
+                "win-x64" => ImageFileMachineAmd64,
+                "win-arm64" => ImageFileMachineArm64,
+                _ => throw new InvalidOperationException($"Unsupported test RuntimeIdentifier '{runtimeIdentifier}'.")
+            };
+            Console.WriteLine($"Running PublishShim integration tests for {runtimeIdentifier}.");
+        }
+
+        private const ushort ImageFileMachineAmd64 = 0x8664;
+        private const ushort ImageFileMachineArm64 = 0xAA64;
+
+        // The published samples run on this machine, so the RID follows the OS
+        // architecture unless PUBLISH_SHIM_TEST_RID overrides it.
+        private static string ResolveRuntimeIdentifier()
+        {
+            var configured = Environment.GetEnvironmentVariable("PUBLISH_SHIM_TEST_RID");
+            if (!string.IsNullOrWhiteSpace(configured))
+            {
+                return configured.Trim();
+            }
+
+            return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
+        }
+
+        private void AssertShimMachine(string executable)
+        {
+            var machine = GetPeMachine(executable);
+            Assert(machine == expectedMachine, $"'{Path.GetFileName(executable)}' must be a native {runtimeIdentifier} shim. Expected PE machine 0x{expectedMachine:X4}, actual 0x{machine:X4}.");
+        }
+
+        private static ushort GetPeMachine(string path)
+        {
+            var bytes = File.ReadAllBytes(path);
+            Assert(bytes.Length >= 0x40 && bytes[0] == (byte)'M' && bytes[1] == (byte)'Z', $"'{path}' is not a PE image.");
+            var peOffset = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(0x3C));
+            Assert(peOffset > 0 && peOffset + 6 <= bytes.Length && bytes[peOffset] == (byte)'P' && bytes[peOffset + 1] == (byte)'E', $"'{path}' has no PE header.");
+            return BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(peOffset + 4));
         }
 
         public async Task RunAsync()
@@ -178,6 +219,7 @@ internal static class Program
             Assert(File.Exists(executable), $"The generated console shim is missing. Publish output: {publishedFiles}");
             Assert(File.Exists(actualApplication), "The relocated console application is missing.");
             Assert(!string.Equals(executable, actualApplication, StringComparison.OrdinalIgnoreCase), "The shim and application paths must differ.");
+            AssertShimMachine(executable);
             if (verifyIcon)
             {
                 Assert(HasGroupIconResource(executable), "The generated console shim must contain the explicitly configured icon.");
@@ -230,6 +272,7 @@ internal static class Program
 
             Assert(File.Exists(executable), "The generated GUI shim is missing.");
             Assert(File.Exists(application), "The relocated GUI application is missing.");
+            AssertShimMachine(executable);
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             var stopwatch = Stopwatch.StartNew();
             var result = RunProcess(
@@ -275,6 +318,8 @@ internal static class Program
             Assert(File.Exists(cliExecutable), "The CLI entry point shim is missing.");
             Assert(File.Exists(guiExecutable), "The GUI entry point shim is missing.");
             Assert(File.Exists(application), "The shared application executable is missing.");
+            AssertShimMachine(cliExecutable);
+            AssertShimMachine(guiExecutable);
             Assert(File.Exists(Path.Combine(publishDirectory, "keep-at-root.txt")), "The excluded publish file must remain in the publish root.");
             Assert(!File.Exists(Path.Combine(publishDirectory, ".app", "keep-at-root.txt")), "The excluded publish file must not be moved into .app.");
             Assert(!File.Exists(Path.Combine(publishDirectory, $"{projectName}.exe")), "The custom entry point target must not leave the original executable in the publish root.");
@@ -328,7 +373,7 @@ internal static class Program
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier>{runtimeIdentifier}</RuntimeIdentifier>
     <PublishTrimmed>{trimmedProperty}</PublishTrimmed>
     <PublishShim>{publishShim.ToString().ToLowerInvariant()}</PublishShim>{kindProperty}{directoryProperty}{aotProperty}{shimIconProperty}
   </PropertyGroup>

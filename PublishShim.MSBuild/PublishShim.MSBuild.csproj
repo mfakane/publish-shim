@@ -5,7 +5,7 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <PackageId>PublishShim.MSBuild</PackageId>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Authors>mfakane</Authors>
     <Company>mfakane</Company>
     <Title>PublishShim MSBuild</Title>
@@ -26,17 +26,21 @@
 
     <Error Condition="!Exists('$(PublishShimRepositoryRoot)tasks\PublishShim.MSBuild.Tasks.dll')"
            Text="The MSBuild task assembly was not generated. Run scripts\Prepare-DevLayout.ps1 before packing." />
-    <Error Condition="!Exists('$(PublishShimRepositoryRoot)tools\win-x64\publishshim.exe')"
-           Text="The win-x64 console shim was not generated. Run scripts\Prepare-DevLayout.ps1 before packing." />
-    <Error Condition="!Exists('$(PublishShimRepositoryRoot)tools\win-x64\publishshim.winexe.exe')"
-           Text="The win-x64 GUI shim was not generated. Run scripts\Prepare-DevLayout.ps1 before packing." />
+    <ItemGroup>
+      <_PublishShimPackageRuntimeIdentifier Include="win-x64;win-arm64" />
+      <_PublishShimPackageNative Include="$(PublishShimRepositoryRoot)tools\%(_PublishShimPackageRuntimeIdentifier.Identity)\publishshim.exe"
+                                 RuntimeIdentifier="%(_PublishShimPackageRuntimeIdentifier.Identity)" />
+      <_PublishShimPackageNative Include="$(PublishShimRepositoryRoot)tools\%(_PublishShimPackageRuntimeIdentifier.Identity)\publishshim.winexe.exe"
+                                 RuntimeIdentifier="%(_PublishShimPackageRuntimeIdentifier.Identity)" />
+    </ItemGroup>
+
+    <Error Condition="!Exists('%(_PublishShimPackageNative.FullPath)')"
+           Text="The native shim %(_PublishShimPackageNative.FullPath) was not generated. Run scripts\Prepare-DevLayout.ps1 before packing." />
 
     <ItemGroup>
       <_PublishShimPackageTask Include="$(PublishShimRepositoryRoot)tasks\PublishShim.MSBuild.Tasks.dll" />
-      <_PublishShimPackageNative Include="$(PublishShimRepositoryRoot)tools\win-x64\publishshim.exe" />
-      <_PublishShimPackageNative Include="$(PublishShimRepositoryRoot)tools\win-x64\publishshim.winexe.exe" />
       <None Include="@(_PublishShimPackageTask)" Pack="true" PackagePath="tasks\PublishShim.MSBuild.Tasks.dll" />
-      <None Include="@(_PublishShimPackageNative)" Pack="true" PackagePath="tools\win-x64\%(Filename)%(Extension)" />
+      <None Include="@(_PublishShimPackageNative)" Pack="true" PackagePath="tools\%(_PublishShimPackageNative.RuntimeIdentifier)\%(Filename)%(Extension)" />
     </ItemGroup>
   </Target>
 

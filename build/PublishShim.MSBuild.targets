@@ -22,8 +22,8 @@
 		  Condition="'$(PublishShim)' == 'true'">
 	<Error Condition="'$(RuntimeIdentifier)' == ''"
 		   Text="PublishShim requires RuntimeIdentifier to be set." />
-	<Error Condition="'$(RuntimeIdentifier)' != 'win-x64' and '$(PublishShimNativeShimPath)' == ''"
-		   Text="This PublishShim.MSBuild release includes native shims for win-x64 only. Set PublishShimNativeShimPath to provide a compatible custom shim." />
+	<Error Condition="'$(RuntimeIdentifier)' != 'win-x64' and '$(RuntimeIdentifier)' != 'win-arm64' and '$(PublishShimNativeShimPath)' == ''"
+		   Text="This PublishShim.MSBuild release includes native shims for win-x64 and win-arm64 only. Set PublishShimNativeShimPath to provide a compatible custom shim." />
 	<Error Condition="'$(PublishDir)' == ''"
 		   Text="PublishShim requires PublishDir to be available." />
 	<Error Condition="'$(PublishShimTargetExecutableName)' == ''"

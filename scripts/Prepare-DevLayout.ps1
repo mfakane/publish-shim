@@ -1,5 +1,7 @@
 param(
-	[string]$Configuration = 'Debug'
+	[string]$Configuration = 'Debug',
+	[ValidateSet('x64', 'ARM64')]
+	[string[]]$Platforms = @('x64', 'ARM64')
 )
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -7,7 +9,14 @@ $taskProject = Join-Path $root 'PublishShim.MSBuild.Tasks/PublishShim.MSBuild.Ta
 $consoleShimProject = Join-Path $root 'PublishShim.Exe/PublishShim.Exe.vcxproj'
 $guiShimProject = Join-Path $root 'PublishShim.WinExe/PublishShim.WinExe.vcxproj'
 $tasksDirectory = Join-Path $root 'tasks'
-$toolsDirectory = Join-Path $root 'tools/win-x64'
+$toolsRoot = Join-Path $root 'tools'
+$nativeOutputRoot = Join-Path $root 'artifacts/native'
+
+# MSBuild platform name, package RID, and the PE machine type its shims must carry.
+$platformInfo = @{
+	'x64' = @{ RuntimeIdentifier = 'win-x64'; Machine = 0x8664 }
+	'ARM64' = @{ RuntimeIdentifier = 'win-arm64'; Machine = 0xAA64 }
+}
 
 function Invoke-NativeMsBuild {
 	param(
@@ -39,31 +48,53 @@ function Invoke-NativeMsBuild {
 	throw 'Visual Studio MSBuild with C++ tools is required to build the native shims.'
 }
 
+function Get-PeMachine {
+	param(
+		[string]$Path
+	)
+
+	$bytes = [System.IO.File]::ReadAllBytes($Path)
+	$peOffset = [System.BitConverter]::ToInt32($bytes, 0x3C)
+	return [int][System.BitConverter]::ToUInt16($bytes, $peOffset + 4)
+}
+
 dotnet build $taskProject -c $Configuration
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Invoke-NativeMsBuild @(
-	$consoleShimProject,
-	"/p:Configuration=$Configuration",
-	'/p:Platform=x64'
-)
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Invoke-NativeMsBuild @(
-	$guiShimProject,
-	"/p:Configuration=$Configuration",
-	'/p:Platform=x64'
-)
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
 $taskOutput = Join-Path $root "PublishShim.MSBuild.Tasks/bin/$Configuration/netstandard2.0"
-$consoleShimOutput = Get-ChildItem -Path $root -Recurse -Filter 'publishshim.exe' | Where-Object { $_.FullName -like "*$Configuration*" } | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-$guiShimOutput = Get-ChildItem -Path $root -Recurse -Filter 'publishshim.winexe.exe' | Where-Object { $_.FullName -like "*$Configuration*" } | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-if (-not $consoleShimOutput) { throw 'Console native shim output was not found.' }
-if (-not $guiShimOutput) { throw 'GUI native shim output was not found.' }
-
 New-Item -ItemType Directory -Force -Path $tasksDirectory | Out-Null
-New-Item -ItemType Directory -Force -Path $toolsDirectory | Out-Null
 Copy-Item -Path (Join-Path $taskOutput '*') -Destination $tasksDirectory -Recurse -Force
-Copy-Item -Path $consoleShimOutput.FullName -Destination (Join-Path $toolsDirectory 'publishshim.exe') -Force
-Copy-Item -Path $guiShimOutput.FullName -Destination (Join-Path $toolsDirectory 'publishshim.winexe.exe') -Force
+
+foreach ($platform in $Platforms) {
+	$info = $platformInfo[$platform]
+	# Each platform builds into its own directory so the copied shims cannot be
+	# picked up from another platform's output.
+	$outDir = (Join-Path $nativeOutputRoot "$platform/$Configuration").TrimEnd('\', '/') + '/'
+	$intDir = Join-Path $nativeOutputRoot "obj/$platform/$Configuration"
+
+	foreach ($project in @($consoleShimProject, $guiShimProject)) {
+		$projectName = [System.IO.Path]::GetFileNameWithoutExtension($project)
+		Invoke-NativeMsBuild @(
+			$project,
+			"/p:Configuration=$Configuration",
+			"/p:Platform=$platform",
+			"/p:OutDir=$outDir",
+			"/p:IntDir=$((Join-Path $intDir $projectName).TrimEnd('\', '/'))/"
+		)
+		if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+	}
+
+	$toolsDirectory = Join-Path $toolsRoot $info.RuntimeIdentifier
+	New-Item -ItemType Directory -Force -Path $toolsDirectory | Out-Null
+	foreach ($shimName in @('publishshim.exe', 'publishshim.winexe.exe')) {
+		$shimOutput = Join-Path $outDir $shimName
+		if (-not (Test-Path $shimOutput)) { throw "Native shim output was not found: $shimOutput" }
+
+		$machine = Get-PeMachine $shimOutput
+		if ($machine -ne $info.Machine) {
+			throw ("{0} has PE machine 0x{1:X4}; expected 0x{2:X4} for {3}." -f $shimOutput, $machine, $info.Machine, $info.RuntimeIdentifier)
+		}
+
+		Copy-Item -Path $shimOutput -Destination (Join-Path $toolsDirectory $shimName) -Force
+	}
+}
