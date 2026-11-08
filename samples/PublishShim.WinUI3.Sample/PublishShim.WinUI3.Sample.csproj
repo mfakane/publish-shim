@@ -14,7 +14,7 @@
     <PublishShim>true</PublishShim>
     <PublishShimKind>WinExe</PublishShimKind>
     <PublishShimDirectory>.app</PublishShimDirectory>
-    <WindowsAppSdkVersion Condition="'$(WindowsAppSdkVersion)' == ''">2.5.1</WindowsAppSdkVersion>
+    <WindowsAppSdkVersion Condition="'$(WindowsAppSdkVersion)' == ''">2.6.4</WindowsAppSdkVersion>
   </PropertyGroup>
 
   <ItemGroup>
