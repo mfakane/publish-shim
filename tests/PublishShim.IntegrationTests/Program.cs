@@ -290,8 +290,7 @@ internal static class Program
 
             Assert(result.ExitCode == 0, $"The GUI shim must exit successfully after spawning the child. Actual: {result.ExitCode}.");
             Assert(stopwatch.Elapsed < TimeSpan.FromSeconds(5), "The GUI shim must not wait for the child process.");
-            await WaitForFileAsync(outputPath);
-            var output = await File.ReadAllTextAsync(outputPath);
+            var output = await ReadFileWhenReadyAsync(outputPath);
             Assert(output.Contains($"PublishShimRoot={Path.GetFullPath(publishDirectory)}", StringComparison.OrdinalIgnoreCase), "The GUI shim must expose its publish root through PUBLISH_SHIM_ROOT.");
             Assert(output.Contains($"PublishShimExe={executable}", StringComparison.OrdinalIgnoreCase), "The GUI shim must expose its executable path through PUBLISH_SHIM_EXE.");
         }
@@ -354,8 +353,7 @@ internal static class Program
                 redirectOutput: false);
 
             Assert(guiResult.ExitCode == 0, $"The GUI entry point must exit successfully after spawning the child. Actual: {guiResult.ExitCode}.");
-            await WaitForFileAsync(guiOutputPath);
-            var guiOutput = await File.ReadAllTextAsync(guiOutputPath);
+            var guiOutput = await ReadFileWhenReadyAsync(guiOutputPath);
             Assert(guiOutput.Contains($"PublishShimRoot={Path.GetFullPath(publishDirectory)}", StringComparison.OrdinalIgnoreCase), "The GUI entry point must expose the shared publish root.");
             Assert(guiOutput.Contains($"PublishShimExe={guiExecutable}", StringComparison.OrdinalIgnoreCase), "The GUI entry point must expose its own shim path.");
         }
@@ -720,14 +718,32 @@ internal static class Program
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool FreeLibrary(IntPtr module);
 
-        private static async Task WaitForFileAsync(string path)
+        private static async Task<string> ReadFileWhenReadyAsync(string path)
         {
+            // The GUI child runs detached, so the file may exist while the child still holds it open for writing.
+            // Opening with FileShare.Read only succeeds once no other handle has write access.
             var timeout = Stopwatch.StartNew();
-            while (!File.Exists(path))
+            while (true)
             {
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        using var reader = new StreamReader(stream);
+                        return await reader.ReadToEndAsync();
+                    }
+                    catch (IOException)
+                    {
+                        // Still being written by the GUI child; retry below.
+                    }
+                }
+
                 if (timeout.Elapsed > TimeSpan.FromSeconds(10))
                 {
-                    throw new TimeoutException($"The GUI child did not create '{path}'.");
+                    throw new TimeoutException(File.Exists(path)
+                        ? $"The GUI child did not release '{path}'."
+                        : $"The GUI child did not create '{path}'.");
                 }
 
                 await Task.Delay(50);
